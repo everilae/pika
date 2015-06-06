@@ -342,7 +342,7 @@ class TestQueueDeclareAndDelete(BlockingTestCase):
 
         ch = connection.channel()
 
-        name = "TestQueueDeclareAndDelete_" + uuid.uuid1().hex
+        name = bytes("TestQueueDeclareAndDelete_" + uuid.uuid1().hex, 'utf-8')
 
         # Declare a new queue
         frame = ch.queue_declare(name, auto_delete=True)
@@ -373,9 +373,9 @@ class TestQueueBindAndUnbindAndPurge(BlockingTestCase):
 
         ch = connection.channel()
 
-        q_name = 'TestQueueBindAndUnbindAndPurge_q' + uuid.uuid1().hex
-        exg_name = 'TestQueueBindAndUnbindAndPurge_exg_' + uuid.uuid1().hex
-        routing_key = 'TestQueueBindAndUnbindAndPurge'
+        q_name = bytes('TestQueueBindAndUnbindAndPurge_q' + uuid.uuid1().hex, 'utf-8')
+        exg_name = bytes('TestQueueBindAndUnbindAndPurge_exg_' + uuid.uuid1().hex, 'utf-8')
+        routing_key = b'TestQueueBindAndUnbindAndPurge'
 
         # Place channel in publisher-acknowledgments mode so that we may test
         # whether the queue is reachable by publishing with mandatory=True
@@ -443,7 +443,7 @@ class TestBasicGet(BlockingTestCase):
         ch = connection.channel()
         LOGGER.info('%s CREATED CHANNEL (%s)', datetime.utcnow(), self)
 
-        q_name = 'TestBasicGet_q' + uuid.uuid1().hex
+        q_name = bytes('TestBasicGet_q' + uuid.uuid1().hex, 'utf-8')
 
         # Place channel in publisher-acknowledgments mode so that the message
         # may be delivered synchronously to the queue by publishing it with
@@ -462,7 +462,7 @@ class TestBasicGet(BlockingTestCase):
         LOGGER.info('%s GOT FROM EMPTY QUEUE (%s)', datetime.utcnow(), self)
 
         # Deposit a message in the queue via default exchange
-        ch.publish(exchange='', routing_key=q_name, body='TestBasicGet',
+        ch.publish(exchange='', routing_key=q_name, body=b'TestBasicGet',
                    mandatory=True)
         LOGGER.info('%s PUBLISHED (%s)', datetime.utcnow(), self)
 
@@ -472,13 +472,13 @@ class TestBasicGet(BlockingTestCase):
         self.assertIsInstance(method, pika.spec.Basic.GetOk)
         self.assertEqual(method.delivery_tag, 1)
         self.assertFalse(method.redelivered)
-        self.assertEqual(method.exchange, '')
+        self.assertEqual(method.exchange, b'')
         self.assertEqual(method.routing_key, q_name)
         self.assertEqual(method.message_count, 0)
 
         self.assertIsInstance(properties, pika.BasicProperties)
         self.assertIsNone(properties.headers)
-        self.assertEqual(body, 'TestBasicGet')
+        self.assertEqual(body, b'TestBasicGet')
 
         # Ack it
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -499,9 +499,9 @@ class TestPublishAndConsumeAndQos(BlockingTestCase):
 
         ch = connection.channel()
 
-        q_name = 'TestPublishAndConsumeAndQos_q' + uuid.uuid1().hex
-        exg_name = 'TestPublishAndConsumeAndQos_exg_' + uuid.uuid1().hex
-        routing_key = 'TestPublishAndConsumeAndQos'
+        q_name = bytes('TestPublishAndConsumeAndQos_q' + uuid.uuid1().hex, 'utf-8')
+        exg_name = bytes('TestPublishAndConsumeAndQos_exg_' + uuid.uuid1().hex, 'utf-8')
+        routing_key = b'TestPublishAndConsumeAndQos'
 
         # Place channel in publisher-acknowledgments mode so that publishing
         # with mandatory=True will be synchronous
@@ -532,7 +532,7 @@ class TestPublishAndConsumeAndQos(BlockingTestCase):
         self.assertEqual(msg.method.exchange, exg_name)
         self.assertEqual(msg.method.routing_key, routing_key)
         self.assertIsInstance(msg.properties, pika.BasicProperties)
-        self.assertEqual(msg.body, '')
+        self.assertEqual(msg.body, b'')
 
         # Bind the queue to the exchange using routing key
         frame = ch.queue_bind(q_name, exchange=exg_name,
@@ -575,7 +575,7 @@ class TestPublishAndConsumeAndQos(BlockingTestCase):
         self.assertEqual(msg.method.routing_key, routing_key)
 
         self.assertIsInstance(msg.properties, pika.BasicProperties)
-        self.assertEqual(msg.body, 'via-basic_publish')
+        self.assertEqual(msg.body, b'via-basic_publish')
 
         # There shouldn't be any more events now
         self.assertFalse(ch.has_event())
@@ -595,7 +595,7 @@ class TestPublishAndConsumeAndQos(BlockingTestCase):
         self.assertEqual(msg.method.routing_key, routing_key)
 
         self.assertIsInstance(msg.properties, pika.BasicProperties)
-        self.assertEqual(msg.body, 'via-publish')
+        self.assertEqual(msg.body, b'via-publish')
 
         # There shouldn't be any more events now
         self.assertFalse(ch.has_event())
