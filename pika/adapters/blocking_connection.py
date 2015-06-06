@@ -1,7 +1,15 @@
-"""BlockingConnection adapter implemented as a wrapper around SelectConnection.
-All public API calls complete synchronously without callbacks.
-"""
+"""The blocking connection adapter module implements blocking semantics on top
+of Pika's core AMQP driver. While most of the asynchronous expectations are
+removed when using the blocking connection adapter, it attempts to remain true
+to the asynchronous RPC nature of the AMQP protocol, supporting server sent
+RPC commands.
 
+The user facing classes in the module consist of the
+:py:class:`~pika.adapters.blocking_connection.BlockingConnection`
+and the :class:`~pika.adapters.blocking_connection.BlockingChannel`
+classes.
+
+"""
 from collections import namedtuple, deque
 import logging
 import time
@@ -136,6 +144,41 @@ class _CallbackResult(object):
             % (self._values,))
 
         return self._values
+
+
+class _TimerContext(object):
+    """Context manager for registering and safely unregistering a
+    SelectConnection ioloop-based timer
+    """
+
+    def __init__(self, duration, connection):
+        """
+        :param float duration: non-negative timer duration in seconds
+        :param SelectConnection connection:
+        """
+        assert hasattr(connection, 'add_timeout'), connection
+        self._duration = duration
+        self._connection = connection
+        self._callback_result = _CallbackResult()
+        self._timer_id = None
+
+    def __enter__(self):
+        """Register a timer"""
+        self._timer_id = self._connection.add_timeout(
+            self._duration,
+            self._callback_result.signal_once)
+        return self
+
+    def __exit__(self, *_args, **_kwargs):
+        """Unregister timer if it hasn't fired yet"""
+        if not self._callback_result:
+            self._connection.remove_timeout(self._timer_id)
+
+    def is_ready(self):
+        """
+        :returns: True if timer has fired, False otherwise
+        """
+        return self._callback_result.is_ready()
 
 
 class BlockingConnection(object):
@@ -274,6 +317,38 @@ class BlockingConnection(object):
 
         assert self._closed_result.ready
 
+    def process_data_events(self, time_limit=0):
+        """Will make sure that data events are processed. Your app can
+        block on this method.
+
+        :param float time_limit: suggested upper bound on processing time in
+            seconds. The actual blocking time depends on the granularity of the
+            underlying ioloop. Zero means return as soon as possible. Defaults
+            to 0.
+        """
+        with _TimerContext(time_limit, self._impl) as timer:
+            self._flush_output(timer.is_ready)
+
+    def sleep(self, duration):
+        """A safer way to sleep than calling time.sleep() directly that would
+        keep the adapter from ignoring frames sent from the broker. The
+        connection will "sleep" or block the number of seconds specified in
+        duration in small intervals.
+
+        :param float duration: The time to sleep in seconds
+
+        """
+        assert duration >= 0, duration
+
+        deadline = time.time() + duration
+        time_limit = duration
+        # Process events at least once
+        while True:
+            self.process_data_events(time_limit)
+            time_limit = deadline - time.time()
+            if time_limit <= 0:
+                break
+
     def channel(self, channel_number=None):
         """Create a new channel with the next available channel number or pass
         in a channel number to use. Must be non-zero if you would like to
@@ -291,21 +366,6 @@ class BlockingConnection(object):
             channel._flush_output(openedArgs.is_ready)
 
         return channel
-
-    def sleep(self, duration):
-        """A safer way to sleep than calling time.sleep() directly which will
-        keep the adapter from ignoring frames sent from RabbitMQ. The
-        connection will "sleep" or block the number of seconds specified in
-        duration in small intervals.
-
-        :param float duration: The time to sleep in seconds
-
-        """
-        assert duration >= 0, duration
-
-        # TODO use ioloop timer for better resolution
-        deadline = time.time() + duration
-        self._flush_output(lambda: time.time() >= deadline)
 
     #
     # Connections state properties
@@ -387,8 +447,8 @@ class ConsumerDeliveryEvt(object):
         :param spec.Basic.Deliver method: NOTE: consumer_tag and delivery_tag
           are valid only within the current channel
         :param spec.BasicProperties properties: message properties
-        :param body: message body; None if no body
-        :type body: str or unicode or None
+        :param body: message body; empty string if no body
+        :type body: str or unicode
         """
         self.method = method
         self.properties = properties
@@ -424,8 +484,8 @@ class ReturnedMessage(object):
         """
         :param spec.Basic.Return method:
         :param spec.BasicProperties properties: message properties
-        :param body: message body; None if no body
-        :type body: str or unicode or None
+        :param body: message body; empty string if no body
+        :type body: str or unicode
         """
         self.method = method
         self.properties = properties
@@ -652,8 +712,9 @@ class BlockingChannel(object):
 
         if self._channel_closed_by_broker_result:
             # Channel was force-closed by broker
-            raise exceptions.ChannelClosed(
-                self._channel_closed_by_broker_result.value)
+            method = (
+                self._channel_closed_by_broker_result.value.method_frame.method)
+            raise exceptions.ChannelClosed(method.reply_code, method.reply_text)
 
     def _on_message_returned(self, channel, method, properties, body):
         """ Called as the result of Basic.Return from broker. Appends the info
@@ -662,8 +723,8 @@ class BlockingChannel(object):
         :param pika.Channel channel: our self._impl channel
         :param pika.spec.Basic.Return method:
         :param pika.spec.BasicProperties properties: message properties
-        :param body: returned message body; may be None if no body
-        :type body: str, unicode or None
+        :param body: returned message body; empty string if no body
+        :type body: str, unicode
 
         """
         assert channel is self._impl, (
@@ -897,36 +958,22 @@ class BlockingChannel(object):
             return self._pending_events.popleft()
 
         # Wait for an event
-        with _CallbackResult() as timeoutResult:
-            if inactivity_timeout is None:
-                waiters = (self.has_event,)
-            else:
-                waiters = (self.has_event, timeoutResult.is_ready)
-                # Start inactivity timer
-                timeout_id = self._connection.add_timeout(
-                    inactivity_timeout,
-                    timeoutResult.signal_once)
 
+        if inactivity_timeout is None:
+            # Wait indefinitely for message delivery
+            self._flush_output(self.has_event)
+        else:
             # Wait for message delivery or inactivity timeout, whichever
             # occurs first
-            try:
-                self._flush_output(*waiters)
-            finally:
-                if inactivity_timeout is not None:
-                    # Reset timer
-                    if not timeoutResult:
-                        self._connection.remove_timeout(timeout_id)
-                    else:
-                        timeoutResult.reset()
-
+            with _TimerContext(inactivity_timeout,
+                               self._connection._impl) as timer:
+                self._flush_output(self.has_event, timer.is_ready)
 
         if self.has_event():
-            # Got an event
             return self._pending_events.popleft()
         else:
             # Inactivity timeout
             return None
-
 
     def read_events(self, inactivity_timeout=None):
         """A blocking generator iterator that wraps `BlockingChanel.get_event`
@@ -938,8 +985,8 @@ class BlockingChannel(object):
             cause the generator to yield None after the given period of
             inactivity; this permits for pseudo-regular maintenance activities
             to be carried out by the user while waiting for messages to arrive.
-            NOTE that the underlying implementation doesn't permit a high level
-            of timing granularity.
+            NOTE that accuracy of the timeout depends on timer resolution of the
+            underlying ioloop.
 
         Example with inactivity timeout ::
 
@@ -1018,8 +1065,8 @@ class BlockingChannel(object):
         :type exchange: str or unicode
         :param routing_key: The routing key to bind on
         :type routing_key: str or unicode
-        :param body: The message body; None if no body
-        :type body: str or unicode or None
+        :param body: The message body; empty string if no body
+        :type body: str or unicode
         :param pika.spec.BasicProperties properties: message properties
         :param bool mandatory: The mandatory flag
         :param bool immediate: The immediate flag
@@ -1044,9 +1091,10 @@ class BlockingChannel(object):
                 self.publish(exchange, routing_key, body, properties,
                              mandatory, immediate)
             except UnroutableError:
-                # Suppress the error as it applies to previously-published
-                # messages (it's beein logged already), and repeat the publish
-                # call
+                # Republish the message
+                # NOTE: we Implement legacy behavior by suppressing the error as
+                # it applies to previously-published messages (it's been logged
+                # already), and repeat the publish call
                 self.publish(exchange, routing_key, body, properties,
                              mandatory, immediate)
             return None
@@ -1070,8 +1118,8 @@ class BlockingChannel(object):
         :type exchange: str or unicode
         :param routing_key: The routing key to bind on
         :type routing_key: str or unicode
-        :param body: The message body; None if no body
-        :type body: str or unicode or None
+        :param body: The message body; empty string if no body
+        :type body: str or unicode
         :param pika.spec.BasicProperties properties: message properties
         :param bool mandatory: The mandatory flag
         :param bool immediate: The immediate flag
@@ -1231,36 +1279,6 @@ class BlockingChannel(object):
         # of publisher acknowledgments
         self._raiseAndClearIfReturnedMessagesPending()
 
-    def exchange_bind(self, destination=None, source=None, routing_key='',
-                      arguments=None):
-        """Bind an exchange to another exchange.
-
-        :param destination: The destination exchange to bind
-        :type destination: str or unicode
-        :param source: The source exchange to bind to
-        :type source: str or unicode
-        :param routing_key: The routing key to bind on
-        :type routing_key: str or unicode
-        :param dict arguments: Custom key/value pair arguments for the binding
-
-        :returns: Method frame from the Exchange.Bind-ok response
-        :rtype: `pika.frame.Method` having `method` attribute of type
-          `spec.Exchange.BindOk`
-
-        """
-        with _CallbackResult(
-                self._MethodFrameCallbackResultArgs) as bind_ok_result:
-            self._impl.exchange_bind(
-                callback=bind_ok_result.set_value_once,
-                destination=destination,
-                source=source,
-                routing_key=routing_key,
-                nowait=False,
-                arguments=arguments)
-
-            self._flush_output(bind_ok_result.is_ready)
-            return bind_ok_result.value.method_frame
-
     def exchange_declare(self, exchange=None,
                          exchange_type='direct', passive=False, durable=False,
                          auto_delete=False, internal=False,
@@ -1294,7 +1312,7 @@ class BlockingChannel(object):
         assert len(kwargs) <= 1, kwargs
 
         with _CallbackResult(
-                self._MethodFrameCallbackResultArgs) as declare_ok_result:
+            self._MethodFrameCallbackResultArgs) as declare_ok_result:
             self._impl.exchange_declare(
                 callback=declare_ok_result.set_value_once,
                 exchange=exchange,
@@ -1323,7 +1341,7 @@ class BlockingChannel(object):
 
         """
         with _CallbackResult(
-                self._MethodFrameCallbackResultArgs) as delete_ok_result:
+            self._MethodFrameCallbackResultArgs) as delete_ok_result:
             self._impl.exchange_delete(
                 callback=delete_ok_result.set_value_once,
                 exchange=exchange,
@@ -1332,6 +1350,36 @@ class BlockingChannel(object):
 
             self._flush_output(delete_ok_result.is_ready)
             return delete_ok_result.value.method_frame
+
+    def exchange_bind(self, destination=None, source=None, routing_key='',
+                      arguments=None):
+        """Bind an exchange to another exchange.
+
+        :param destination: The destination exchange to bind
+        :type destination: str or unicode
+        :param source: The source exchange to bind to
+        :type source: str or unicode
+        :param routing_key: The routing key to bind on
+        :type routing_key: str or unicode
+        :param dict arguments: Custom key/value pair arguments for the binding
+
+        :returns: Method frame from the Exchange.Bind-ok response
+        :rtype: `pika.frame.Method` having `method` attribute of type
+          `spec.Exchange.BindOk`
+
+        """
+        with _CallbackResult(
+                self._MethodFrameCallbackResultArgs) as bind_ok_result:
+            self._impl.exchange_bind(
+                callback=bind_ok_result.set_value_once,
+                destination=destination,
+                source=source,
+                routing_key=routing_key,
+                nowait=False,
+                arguments=arguments)
+
+            self._flush_output(bind_ok_result.is_ready)
+            return bind_ok_result.value.method_frame
 
     def exchange_unbind(self, destination=None, source=None, routing_key='',
                         arguments=None):
@@ -1351,7 +1399,7 @@ class BlockingChannel(object):
 
         """
         with _CallbackResult(
-                self._MethodFrameCallbackResultArgs) as unbind_ok_result:
+            self._MethodFrameCallbackResultArgs) as unbind_ok_result:
             self._impl.exchange_unbind(
                 callback=unbind_ok_result.set_value_once,
                 destination=destination,
@@ -1362,35 +1410,6 @@ class BlockingChannel(object):
 
             self._flush_output(unbind_ok_result.is_ready)
             return unbind_ok_result.value.method_frame
-
-    def queue_bind(self, queue, exchange, routing_key=None,
-                   arguments=None):
-        """Bind the queue to the specified exchange
-
-        :param queue: The queue to bind to the exchange
-        :type queue: str or unicode
-        :param exchange: The source exchange to bind to
-        :type exchange: str or unicode
-        :param routing_key: The routing key to bind on
-        :type routing_key: str or unicode
-        :param dict arguments: Custom key/value pair arguments for the binding
-
-        :returns: Method frame from the Queue.Bind-ok response
-        :rtype: `pika.frame.Method` having `method` attribute of type
-          `spec.Queue.BindOk`
-
-        """
-        with _CallbackResult(
-                self._MethodFrameCallbackResultArgs) as bind_ok_result:
-            self._impl.queue_bind(callback=bind_ok_result.set_value_once,
-                                  queue=queue,
-                                  exchange=exchange,
-                                  routing_key=routing_key,
-                                  nowait=False,
-                                  arguments=arguments)
-
-            self._flush_output(bind_ok_result.is_ready)
-            return bind_ok_result.value.method_frame
 
     def queue_declare(self, queue='', passive=False, durable=False,
                       exclusive=False, auto_delete=False,
@@ -1474,6 +1493,35 @@ class BlockingChannel(object):
 
             self._flush_output(purge_ok_result.is_ready)
             return purge_ok_result.value.method_frame
+
+    def queue_bind(self, queue, exchange, routing_key=None,
+                   arguments=None):
+        """Bind the queue to the specified exchange
+
+        :param queue: The queue to bind to the exchange
+        :type queue: str or unicode
+        :param exchange: The source exchange to bind to
+        :type exchange: str or unicode
+        :param routing_key: The routing key to bind on
+        :type routing_key: str or unicode
+        :param dict arguments: Custom key/value pair arguments for the binding
+
+        :returns: Method frame from the Queue.Bind-ok response
+        :rtype: `pika.frame.Method` having `method` attribute of type
+          `spec.Queue.BindOk`
+
+        """
+        with _CallbackResult(
+            self._MethodFrameCallbackResultArgs) as bind_ok_result:
+            self._impl.queue_bind(callback=bind_ok_result.set_value_once,
+                                  queue=queue,
+                                  exchange=exchange,
+                                  routing_key=routing_key,
+                                  nowait=False,
+                                  arguments=arguments)
+
+            self._flush_output(bind_ok_result.is_ready)
+            return bind_ok_result.value.method_frame
 
     def queue_unbind(self, queue='', exchange=None, routing_key=None,
                      arguments=None):
