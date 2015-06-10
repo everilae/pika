@@ -127,13 +127,22 @@ def encode_table(pieces, table):
     return tablesize + 4
 
 
-def _simple_value_encoder(pieces, value, fmt, type_octet):
+def _simple_value_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
     """Encode ``value`` and append to ``pieces``. Return size of encoded
     value.
     """
     fmt = '>c%s' % fmt
-    pieces.append(struct.pack(fmt, type_octet, value))
+    pieces.append(struct.pack(fmt, type_octet, conv(value)))
     return struct.calcsize(fmt)
+
+
+_table_value_encoder_lookup = [
+    (bool, partial(_simple_value_encoder, fmt='B', type_octet=b't')),
+    (long, partial(_simple_value_encoder, fmt='q', type_octet=b'l')),
+    (int, partial(_simple_value_encoder, fmt='i', type_octet=b'I')),
+    (datetime, partial(_simple_value_encoder, fmt='Q', type_octet=b'T',
+                       conv=lambda v: calendar.timegm(v.utctimetuple()))),
+]
 
 
 def encode_value(pieces, value):
@@ -150,13 +159,12 @@ def encode_value(pieces, value):
     if isinstance(value, basestring if PY2 else str):
         pieces.append(struct.pack('c', b'S'))
         return struct.calcsize('c') + encode_long_string(pieces, value)
-    elif isinstance(value, bool):
-        return _simple_value_encoder(pieces, value, 'B', b't')
-    elif isinstance(value, long):
-        return _simple_value_encoder(pieces, value, 'q', b'l')
-    elif isinstance(value, int):
-        return _simple_value_encoder(pieces, value, 'i', b'I')
-    elif isinstance(value, decimal.Decimal):
+
+    for type, encoder in _table_value_encoder_lookup:
+        if isinstance(value, type):
+            return encoder(pieces, value)
+
+    if isinstance(value, decimal.Decimal):
         value = value.normalize()
         if value.as_tuple().exponent < 0:
             decimals = -value.as_tuple().exponent
@@ -166,9 +174,6 @@ def encode_value(pieces, value):
             # per spec, the "decimals" octet is unsigned (!)
             pieces.append(struct.pack('>cBi', b'D', 0, int(value)))
         return 6
-    elif isinstance(value, datetime):
-        return _simple_value_encoder(
-            pieces, calendar.timegm(value.utctimetuple()), 'Q', b'T')
     elif isinstance(value, dict):
         pieces.append(struct.pack('>c', b'F'))
         return 1 + encode_table(pieces, value)
@@ -189,8 +194,8 @@ def encode_value(pieces, value):
 
         except OverflowError:
             return _simple_value_encoder(pieces, value, 'd', b'd')
-    else:
-        raise exceptions.UnsupportedAMQPFieldException(pieces, value)
+
+    raise exceptions.UnsupportedAMQPFieldException(pieces, value)
 
 
 def decode_table(encoded, offset):
