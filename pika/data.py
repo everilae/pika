@@ -127,6 +127,35 @@ def encode_table(pieces, table):
     return tablesize + 4
 
 
+def encode_float(pieces, value):
+    """Encode floating point ``value`` and append to ``pieces``. Return size
+    of encoded value.
+    """
+    try:
+        return _simple_value_encoder(pieces, value, 'f', b'f')
+
+    except OverflowError:
+        return _simple_value_encoder(pieces, value, 'd', b'd')
+
+
+def encode_decimal(pieces, value):
+    """Encode decimal ``value`` and append to ``pieces``. Return size
+    of encoded value.
+    """
+    # per spec, the "decimals" octet is unsigned (!)
+    fmt = '>cBi'
+    value = value.normalize()
+    if value.as_tuple().exponent < 0:
+        decimals = -value.as_tuple().exponent
+        raw = int(value * (decimal.Decimal(10) ** decimals))
+        pieces.append(struct.pack(fmt, b'D', decimals, raw))
+
+    else:
+        pieces.append(struct.pack(fmt, b'D', 0, int(value)))
+
+    return struct.calcsize(fmt)
+
+
 def _simple_value_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
     """Encode ``value`` and append to ``pieces``. Return size of encoded
     value.
@@ -136,12 +165,38 @@ def _simple_value_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
     return struct.calcsize(fmt)
 
 
+def encode_list(pieces, value):
+    """Encode list ``value`` and append to ``pieces``. Return size
+    of encoded value.
+    """
+    p = []
+    for v in value:
+        encode_value(p, v)
+    piece = b''.join(p)
+    fmt = '>cI'
+    pieces.append(struct.pack(fmt, b'A', len(piece)))
+    pieces.append(piece)
+    return struct.calcsize(fmt) + len(piece)
+
+
+def encode_dict(pieces, value):
+    """Encode dict ``value`` and append to ``pieces``. Return size
+    of encoded value.
+    """
+    pieces.append(struct.pack('>c', b'F'))
+    return 1 + encode_table(pieces, value)
+
+
 _table_value_encoder_lookup = [
     (bool, partial(_simple_value_encoder, fmt='B', type_octet=b't')),
     (long, partial(_simple_value_encoder, fmt='q', type_octet=b'l')),
     (int, partial(_simple_value_encoder, fmt='i', type_octet=b'I')),
     (datetime, partial(_simple_value_encoder, fmt='Q', type_octet=b'T',
                        conv=lambda v: calendar.timegm(v.utctimetuple()))),
+    (float, encode_float),
+    (decimal.Decimal, encode_decimal),
+    (dict, encode_dict),
+    (list, encode_list),
 ]
 
 
@@ -164,36 +219,9 @@ def encode_value(pieces, value):
         if isinstance(value, type):
             return encoder(pieces, value)
 
-    if isinstance(value, decimal.Decimal):
-        value = value.normalize()
-        if value.as_tuple().exponent < 0:
-            decimals = -value.as_tuple().exponent
-            raw = int(value * (decimal.Decimal(10) ** decimals))
-            pieces.append(struct.pack('>cBi', b'D', decimals, raw))
-        else:
-            # per spec, the "decimals" octet is unsigned (!)
-            pieces.append(struct.pack('>cBi', b'D', 0, int(value)))
-        return 6
-    elif isinstance(value, dict):
-        pieces.append(struct.pack('>c', b'F'))
-        return 1 + encode_table(pieces, value)
-    elif isinstance(value, list):
-        p = []
-        for v in value:
-            encode_value(p, v)
-        piece = b''.join(p)
-        pieces.append(struct.pack('>cI', b'A', len(piece)))
-        pieces.append(piece)
-        return 5 + len(piece)
-    elif value is None:
+    if value is None:
         pieces.append(struct.pack('>c', b'V'))
         return 1
-    elif isinstance(value, float):
-        try:
-            return _simple_value_encoder(pieces, value, 'f', b'f')
-
-        except OverflowError:
-            return _simple_value_encoder(pieces, value, 'd', b'd')
 
     raise exceptions.UnsupportedAMQPFieldException(pieces, value)
 
