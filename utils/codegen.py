@@ -131,20 +131,17 @@ def generate(specPath):
     def genSingleEncode(prefix, cValue, unresolved_domain):
         type = spec.resolveDomain(unresolved_domain)
         if type == 'shortstr':
-            print(prefix + \
-                "assert isinstance(%s, str_or_bytes),\\\n%s       'A non-string value was supplied for %s'" \
-                % (cValue, prefix, cValue))
+            print(prefix +
+                  "assert isinstance(%s, str_or_bytes),\\\n"
+                  "%s       'A non-string value was supplied for %s'"
+                  % (cValue, prefix, cValue))
             print(prefix + "data.encode_short_string(pieces, %s)" % cValue)
         elif type == 'longstr':
-            print(prefix + \
-                "assert isinstance(%s, str_or_bytes),\\\n%s       'A non-string value was supplied for %s'" \
-                % (cValue, prefix, cValue))
-            print(
-                prefix +
-                "value = %s.encode('utf-8') if isinstance(%s, unicode_type) else %s"
-                % (cValue, cValue, cValue))
-            print(prefix + "pieces.append(struct.pack('>I', len(value)))")
-            print(prefix + "pieces.append(value)")
+            print(prefix +
+                  "assert isinstance(%s, str_or_bytes),\\\n"
+                  "%s       'A non-string value was supplied for %s'"
+                  % (cValue, prefix, cValue))
+            print(prefix + "data.encode_long_string(pieces, %s)" % cValue)
         elif type == 'octet':
             print(prefix + "pieces.append(struct.pack('B', %s))" % cValue)
         elif type == 'short':

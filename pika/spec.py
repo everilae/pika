@@ -99,14 +99,10 @@ class Connection(amqp_object.Class):
             data.encode_table(pieces, self.server_properties)
             assert isinstance(self.mechanisms, str_or_bytes),\
                    'A non-string value was supplied for self.mechanisms'
-            value = self.mechanisms.encode('utf-8') if isinstance(self.mechanisms, unicode_type) else self.mechanisms
-            pieces.append(struct.pack('>I', len(value)))
-            pieces.append(value)
+            data.encode_long_string(pieces, self.mechanisms)
             assert isinstance(self.locales, str_or_bytes),\
                    'A non-string value was supplied for self.locales'
-            value = self.locales.encode('utf-8') if isinstance(self.locales, unicode_type) else self.locales
-            pieces.append(struct.pack('>I', len(value)))
-            pieces.append(value)
+            data.encode_long_string(pieces, self.locales)
             return pieces
 
     class StartOk(amqp_object.Method):
@@ -146,9 +142,7 @@ class Connection(amqp_object.Class):
             data.encode_short_string(pieces, self.mechanism)
             assert isinstance(self.response, str_or_bytes),\
                    'A non-string value was supplied for self.response'
-            value = self.response.encode('utf-8') if isinstance(self.response, unicode_type) else self.response
-            pieces.append(struct.pack('>I', len(value)))
-            pieces.append(value)
+            data.encode_long_string(pieces, self.response)
             assert isinstance(self.locale, str_or_bytes),\
                    'A non-string value was supplied for self.locale'
             data.encode_short_string(pieces, self.locale)
@@ -181,9 +175,7 @@ class Connection(amqp_object.Class):
             pieces = list()
             assert isinstance(self.challenge, str_or_bytes),\
                    'A non-string value was supplied for self.challenge'
-            value = self.challenge.encode('utf-8') if isinstance(self.challenge, unicode_type) else self.challenge
-            pieces.append(struct.pack('>I', len(value)))
-            pieces.append(value)
+            data.encode_long_string(pieces, self.challenge)
             return pieces
 
     class SecureOk(amqp_object.Method):
@@ -213,9 +205,7 @@ class Connection(amqp_object.Class):
             pieces = list()
             assert isinstance(self.response, str_or_bytes),\
                    'A non-string value was supplied for self.response'
-            value = self.response.encode('utf-8') if isinstance(self.response, unicode_type) else self.response
-            pieces.append(struct.pack('>I', len(value)))
-            pieces.append(value)
+            data.encode_long_string(pieces, self.response)
             return pieces
 
     class Tune(amqp_object.Method):
@@ -489,9 +479,7 @@ class Channel(amqp_object.Class):
             pieces = list()
             assert isinstance(self.channel_id, str_or_bytes),\
                    'A non-string value was supplied for self.channel_id'
-            value = self.channel_id.encode('utf-8') if isinstance(self.channel_id, unicode_type) else self.channel_id
-            pieces.append(struct.pack('>I', len(value)))
-            pieces.append(value)
+            data.encode_long_string(pieces, self.channel_id)
             return pieces
 
     class Flow(amqp_object.Method):
