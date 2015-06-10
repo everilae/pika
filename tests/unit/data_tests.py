@@ -23,8 +23,10 @@ from pika.compat import long
 
 class DataTests(unittest.TestCase):
 
+    maxDiff = None
+
     FIELD_TBL_ENCODED = (
-        b'\x00\x00\x00\xbb'
+        b'\x00\x00\x00\xdc'
         b'\x05arrayA\x00\x00\x00\x0fI\x00\x00\x00\x01I\x00\x00\x00\x02I\x00\x00\x00\x03'
         b'\x07boolvalt\x01'
         b'\x07decimalD\x02\x00\x00\x01:'
@@ -32,6 +34,8 @@ class DataTests(unittest.TestCase):
         b'\x07dictvalF\x00\x00\x00\x0c\x03fooS\x00\x00\x00\x03bar'
         b'\x06intvalI\x00\x00\x00\x01'
         b'\x07longvall\x00\x00\x00\x006e&U'
+        b'\x08floatvalf\x3e\x00\x00\x00'
+        b'\x09doublevald\x48\x3d\x63\x29\xf1\xc3\x5c\xa5'
         b'\x04nullV'
         b'\x06strvalS\x00\x00\x00\x04Test'
         b'\x0ctimestampvalT\x00\x00\x00\x00Ec)\x92'
@@ -46,6 +50,10 @@ class DataTests(unittest.TestCase):
         ('dictval', {'foo': 'bar'}),
         ('intval', 1)	,
         ('longval', long(912598613)),
+        # Error prone, depends heavily on float precision etc., remove
+        # if needed
+        ('floatval', .125),
+        ('doubleval', 1.e40),
         ('null', None),
         ('strval', 'Test'),
         ('timestampval', datetime.datetime(2006, 11, 21, 16, 30, 10)),
@@ -60,7 +68,7 @@ class DataTests(unittest.TestCase):
     def test_encode_table_bytes(self):
         result = []
         byte_count = data.encode_table(result, self.FIELD_TBL_VALUE)
-        self.assertEqual(byte_count, 191)
+        self.assertEqual(byte_count, 224)
 
     def test_decode_table(self):
         value, byte_count = data.decode_table(self.FIELD_TBL_ENCODED, 0)
@@ -68,7 +76,7 @@ class DataTests(unittest.TestCase):
 
     def test_decode_table_bytes(self):
         value, byte_count = data.decode_table(self.FIELD_TBL_ENCODED, 0)
-        self.assertEqual(byte_count, 191)
+        self.assertEqual(byte_count, 224)
 
     def test_encode_raises(self):
         self.assertRaises(exceptions.UnsupportedAMQPFieldException,

@@ -3,9 +3,26 @@ import struct
 import decimal
 import calendar
 from datetime import datetime
+from functools import partial
+from collections import OrderedDict
 
 from pika import exceptions
 from pika.compat import unicode_type, PY2, long, as_bytes
+
+
+def _encode_string(pieces, value, fmt):
+    """Generic string encoding
+
+    :param list pieces: Already encoded values
+    :param str value: String value to encode
+    :param str fmt: Packing format for length
+    :rtype: int
+    """
+    encoded_value = as_bytes(value)
+    length = len(encoded_value)
+    pieces.append(struct.pack(fmt, length))
+    pieces.append(encoded_value)
+    return struct.calcsize(fmt) + length
 
 
 def encode_short_string(pieces, value):
@@ -18,9 +35,6 @@ def encode_short_string(pieces, value):
     :rtype: int
 
     """
-    encoded_value = as_bytes(value)
-    length = len(encoded_value)
-
     # 4.2.5.3
     # Short strings, stored as an 8-bit unsigned integer length followed by zero
     # or more octets of data. Short strings can carry up to 255 octets of UTF-8
@@ -32,12 +46,35 @@ def encode_short_string(pieces, value):
     # error).
     # -> validate length (avoid truncated utf-8 / corrupted data), but skip null
     # byte check.
-    if length > 255:
-        raise exceptions.ShortStringTooLong(encoded_value)
+    try:
+        return _encode_string(pieces, value, 'B')
 
-    pieces.append(struct.pack('B', length))
-    pieces.append(encoded_value)
-    return 1 + length
+    except struct.error:
+        raise ShortStringTooLong(value)
+
+
+def encode_long_string(pieces, value):
+    """Encode a string value as long string and append it to pieces list
+    returning the size of the encoded value.
+
+    :param list pieces: Already encoded values
+    :param value: String value to encode
+    :type value: str or unicode
+    :rtype: int
+
+    """
+    # If someone is trying to encode over 4G string, let them suffer
+    return _encode_string(pieces, value, '>I')
+
+ 
+def _decode_string(encoded, offset, fmt):
+    """Decode a string.
+    """
+    length = struct.unpack_from(fmt, encoded, offset)[0]
+    offset += struct.calcsize(fmt)
+    value = encoded[offset:offset + length].decode('utf-8')
+    offset += length
+    return value, offset
 
 
 if PY2:
@@ -60,11 +97,13 @@ else:
     def decode_short_string(encoded, offset):
         """Decode a short string value from ``encoded`` data at ``offset``.
         """
-        length = struct.unpack_from('B', encoded, offset)[0]
-        offset += 1
-        value = encoded[offset:offset + length].decode('utf8')
-        offset += length
-        return value, offset
+        return _decode_string(encoded, offset, 'B')
+
+
+def decode_long_string(encoded, offset):
+    """Decode a long string value from ``encoded`` data at ``offset``.
+    """
+    return _decode_string(encoded, offset, '>I')
 
 
 def encode_table(pieces, table):
@@ -149,6 +188,14 @@ def encode_value(pieces, value):
     elif value is None:
         pieces.append(struct.pack('>c', b'V'))
         return 1
+    elif isinstance(value, float):
+        try:
+            pieces.append(struct.pack('>cf', b'f', value))
+            return struct.calcsize('>cf')
+
+        except OverflowError:
+            pieces.append(struct.pack('>cd', b'd', value))
+            return struct.calcsize('>cd')
     else:
         raise exceptions.UnsupportedAMQPFieldException(pieces, value)
 
@@ -162,7 +209,7 @@ def decode_table(encoded, offset):
     :rtype: tuple
 
     """
-    result = {}
+    result = OrderedDict()
     tablesize = struct.unpack_from('>I', encoded, offset)[0]
     offset += 4
     limit = offset + tablesize
@@ -171,6 +218,62 @@ def decode_table(encoded, offset):
         value, offset = decode_value(encoded, offset)
         result[key] = value
     return result, offset
+
+
+def decode_array(encoded, offset):
+    """Decode an array.
+    """
+    length = struct.unpack_from('>I', encoded, offset)[0]
+    offset += 4
+    offset_end = offset + length
+    value = []
+    while offset < offset_end:
+        v, offset = decode_value(encoded, offset)
+        value.append(v)
+
+    return value, offset
+
+
+def decode_decimal(encoded, offset):
+    """Decode a decimal.
+    """
+    decimals = struct.unpack_from('B', encoded, offset)[0]
+    offset += 1
+    raw = struct.unpack_from('>i', encoded, offset)[0]
+    offset += 4
+    value = decimal.Decimal(raw) * (decimal.Decimal(10) ** -decimals)
+    return value, offset
+
+
+def _simple_value_decoder(encoded, offset, fmt, type=lambda x: x):
+    """Decode ``encoded`` value at ``offset`` returning ``(value, offset)``
+    tuple.
+    """
+    return (type(struct.unpack_from(fmt, encoded, offset)[0]),
+            offset + struct.calcsize(fmt))
+
+
+_table_value_decoder_lookup = {
+    b't': partial(_simple_value_decoder, fmt='B', type=bool),
+    b'b': partial(_simple_value_decoder, fmt='B'),
+    b'B': partial(_simple_value_decoder, fmt='b'),
+    b'U': partial(_simple_value_decoder, fmt='>h'),
+    b'u': partial(_simple_value_decoder, fmt='>H'),
+    b'I': partial(_simple_value_decoder, fmt='>i', type=long),
+    b'i': partial(_simple_value_decoder, fmt='>I', type=long),
+    b'L': partial(_simple_value_decoder, fmt='>q', type=long),
+    b'l': partial(_simple_value_decoder, fmt='>Q', type=long),
+    b'f': partial(_simple_value_decoder, fmt='>f'),
+    B'd': partial(_simple_value_decoder, fmt='>d'),
+    b'D': decode_decimal,
+    b's': decode_short_string,
+    b'S': decode_long_string,
+    b'T': partial(_simple_value_decoder, fmt='>Q',
+                  type=datetime.utcfromtimestamp),
+    b'F': decode_table,
+    b'A': decode_array,
+    b'V': lambda encoded, offset: (None, offset),
+}
 
 
 def decode_value(encoded, offset):
@@ -187,105 +290,8 @@ def decode_value(encoded, offset):
     kind = encoded[offset:offset + 1]
     offset += 1
 
-    # Bool
-    if kind == b't':
-        value = struct.unpack_from('>B', encoded, offset)[0]
-        value = bool(value)
-        offset += 1
+    try:
+        return _table_value_decoder_lookup[kind](encoded, offset)
 
-    # Short-Short Int
-    elif kind == b'b':
-        value = struct.unpack_from('>B', encoded, offset)[0]
-        offset += 1
-
-    # Short-Short Unsigned Int
-    elif kind == b'B':
-        value = struct.unpack_from('>b', encoded, offset)[0]
-        offset += 1
-
-    # Short Int
-    elif kind == b'U':
-        value = struct.unpack_from('>h', encoded, offset)[0]
-        offset += 2
-
-    # Short Unsigned Int
-    elif kind == b'u':
-        value = struct.unpack_from('>H', encoded, offset)[0]
-        offset += 2
-
-    # Long Int
-    elif kind == b'I':
-        value = struct.unpack_from('>i', encoded, offset)[0]
-        offset += 4
-
-    # Long Unsigned Int
-    elif kind == b'i':
-        value = struct.unpack_from('>I', encoded, offset)[0]
-        offset += 4
-
-    # Long-Long Int
-    elif kind == b'L':
-        value = long(struct.unpack_from('>q', encoded, offset)[0])
-        offset += 8
-
-    # Long-Long Unsigned Int
-    elif kind == b'l':
-        value = long(struct.unpack_from('>Q', encoded, offset)[0])
-        offset += 8
-
-    # Float
-    elif kind == b'f':
-        value = long(struct.unpack_from('>f', encoded, offset)[0])
-        offset += 4
-
-    # Double
-    elif kind == b'd':
-        value = long(struct.unpack_from('>d', encoded, offset)[0])
-        offset += 8
-
-    # Decimal
-    elif kind == b'D':
-        decimals = struct.unpack_from('B', encoded, offset)[0]
-        offset += 1
-        raw = struct.unpack_from('>i', encoded, offset)[0]
-        offset += 4
-        value = decimal.Decimal(raw) * (decimal.Decimal(10) ** -decimals)
-
-    # Short String
-    elif kind == b's':
-        value, offset = decode_short_string(encoded, offset)
-
-    # Long String
-    elif kind == b'S':
-        length = struct.unpack_from('>I', encoded, offset)[0]
-        offset += 4
-        value = encoded[offset:offset + length].decode('utf8')
-        offset += length
-
-    # Field Array
-    elif kind == b'A':
-        length = struct.unpack_from('>I', encoded, offset)[0]
-        offset += 4
-        offset_end = offset + length
-        value = []
-        while offset < offset_end:
-            v, offset = decode_value(encoded, offset)
-            value.append(v)
-
-    # Timestamp
-    elif kind == b'T':
-        value = datetime.utcfromtimestamp(struct.unpack_from('>Q', encoded,
-                                                             offset)[0])
-        offset += 8
-
-    # Field Table
-    elif kind == b'F':
-        (value, offset) = decode_table(encoded, offset)
-
-    # Null / Void
-    elif kind == b'V':
-        value = None
-    else:
+    except KeyError:
         raise exceptions.InvalidFieldTypeException(kind)
-
-    return value, offset
