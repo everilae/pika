@@ -127,6 +127,15 @@ def encode_table(pieces, table):
     return tablesize + 4
 
 
+def _simple_value_encoder(pieces, value, fmt, type_octet):
+    """Encode ``value`` and append to ``pieces``. Return size of encoded
+    value.
+    """
+    fmt = '>c%s' % fmt
+    pieces.append(struct.pack(fmt, type_octet, value))
+    return struct.calcsize(fmt)
+
+
 def encode_value(pieces, value):
     """Encode the value passed in and append it to the pieces list returning
     the the size of the encoded value.
@@ -137,29 +146,16 @@ def encode_value(pieces, value):
 
     """
 
-    if PY2:
-        if isinstance(value, basestring):
-            if isinstance(value, unicode_type):
-                value = value.encode('utf-8')
-            pieces.append(struct.pack('>cI', b'S', len(value)))
-            pieces.append(value)
-            return 5 + len(value)
-    else:
-        # support only str on Python 3
-        if isinstance(value, str):
-            value = value.encode('utf-8')
-            pieces.append(struct.pack('>cI', b'S', len(value)))
-            pieces.append(value)
-            return 5 + len(value)
-    if isinstance(value, bool):
-        pieces.append(struct.pack('>cB', b't', int(value)))
-        return 2
-    if isinstance(value, long):
-        pieces.append(struct.pack('>cq', b'l', value))
-        return 9
+    # support only str on Python 3
+    if isinstance(value, basestring if PY2 else str):
+        pieces.append(struct.pack('c', b'S'))
+        return struct.calcsize('c') + encode_long_string(pieces, value)
+    elif isinstance(value, bool):
+        return _simple_value_encoder(pieces, value, 'B', b't')
+    elif isinstance(value, long):
+        return _simple_value_encoder(pieces, value, 'q', b'l')
     elif isinstance(value, int):
-        pieces.append(struct.pack('>ci', b'I', value))
-        return 5
+        return _simple_value_encoder(pieces, value, 'i', b'I')
     elif isinstance(value, decimal.Decimal):
         value = value.normalize()
         if value.as_tuple().exponent < 0:
@@ -171,9 +167,8 @@ def encode_value(pieces, value):
             pieces.append(struct.pack('>cBi', b'D', 0, int(value)))
         return 6
     elif isinstance(value, datetime):
-        pieces.append(struct.pack('>cQ', b'T',
-                                  calendar.timegm(value.utctimetuple())))
-        return 9
+        return _simple_value_encoder(
+            pieces, calendar.timegm(value.utctimetuple()), 'Q', b'T')
     elif isinstance(value, dict):
         pieces.append(struct.pack('>c', b'F'))
         return 1 + encode_table(pieces, value)
@@ -190,12 +185,10 @@ def encode_value(pieces, value):
         return 1
     elif isinstance(value, float):
         try:
-            pieces.append(struct.pack('>cf', b'f', value))
-            return struct.calcsize('>cf')
+            return _simple_value_encoder(pieces, value, 'f', b'f')
 
         except OverflowError:
-            pieces.append(struct.pack('>cd', b'd', value))
-            return struct.calcsize('>cd')
+            return _simple_value_encoder(pieces, value, 'd', b'd')
     else:
         raise exceptions.UnsupportedAMQPFieldException(pieces, value)
 
@@ -264,7 +257,7 @@ _table_value_decoder_lookup = {
     b'L': partial(_simple_value_decoder, fmt='>q', type=long),
     b'l': partial(_simple_value_decoder, fmt='>Q', type=long),
     b'f': partial(_simple_value_decoder, fmt='>f'),
-    B'd': partial(_simple_value_decoder, fmt='>d'),
+    b'd': partial(_simple_value_decoder, fmt='>d'),
     b'D': decode_decimal,
     b's': decode_short_string,
     b'S': decode_long_string,
