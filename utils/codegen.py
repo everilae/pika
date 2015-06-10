@@ -91,15 +91,7 @@ def generate(specPath):
         if type == 'shortstr':
             print(prefix + "%s, offset = data.decode_short_string(encoded, offset)" % cLvalue)
         elif type == 'longstr':
-            print(prefix +
-                  "length = struct.unpack_from('>I', encoded, offset)[0]")
-            print(prefix + "offset += 4")
-            print(prefix + "%s = encoded[offset:offset + length]" % cLvalue)
-            print(prefix + "try:")
-            print(prefix + "    %s = str(%s)" % (cLvalue, cLvalue))
-            print(prefix + "except UnicodeEncodeError:")
-            print(prefix + "    pass")
-            print(prefix + "offset += length")
+            print(prefix + "%s, offset = data.decode_long_string(encoded, offset)" % cLvalue)
         elif type == 'octet':
             print(prefix + "%s = struct.unpack_from('B', encoded, offset)[0]" %
                   cLvalue)

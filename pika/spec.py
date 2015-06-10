@@ -74,22 +74,8 @@ class Connection(amqp_object.Class):
             self.version_minor = struct.unpack_from('B', encoded, offset)[0]
             offset += 1
             (self.server_properties, offset) = data.decode_table(encoded, offset)
-            length = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.mechanisms = encoded[offset:offset + length]
-            try:
-                self.mechanisms = str(self.mechanisms)
-            except UnicodeEncodeError:
-                pass
-            offset += length
-            length = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.locales = encoded[offset:offset + length]
-            try:
-                self.locales = str(self.locales)
-            except UnicodeEncodeError:
-                pass
-            offset += length
+            self.mechanisms, offset = data.decode_long_string(encoded, offset)
+            self.locales, offset = data.decode_long_string(encoded, offset)
             return self
 
         def encode(self):
@@ -123,14 +109,7 @@ class Connection(amqp_object.Class):
         def decode(self, encoded, offset=0):
             (self.client_properties, offset) = data.decode_table(encoded, offset)
             self.mechanism, offset = data.decode_short_string(encoded, offset)
-            length = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.response = encoded[offset:offset + length]
-            try:
-                self.response = str(self.response)
-            except UnicodeEncodeError:
-                pass
-            offset += length
+            self.response, offset = data.decode_long_string(encoded, offset)
             self.locale, offset = data.decode_short_string(encoded, offset)
             return self
 
@@ -161,14 +140,7 @@ class Connection(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            length = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.challenge = encoded[offset:offset + length]
-            try:
-                self.challenge = str(self.challenge)
-            except UnicodeEncodeError:
-                pass
-            offset += length
+            self.challenge, offset = data.decode_long_string(encoded, offset)
             return self
 
         def encode(self):
@@ -191,14 +163,7 @@ class Connection(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            length = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.response = encoded[offset:offset + length]
-            try:
-                self.response = str(self.response)
-            except UnicodeEncodeError:
-                pass
-            offset += length
+            self.response, offset = data.decode_long_string(encoded, offset)
             return self
 
         def encode(self):
@@ -465,14 +430,7 @@ class Channel(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            length = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.channel_id = encoded[offset:offset + length]
-            try:
-                self.channel_id = str(self.channel_id)
-            except UnicodeEncodeError:
-                pass
-            offset += length
+            self.channel_id, offset = data.decode_long_string(encoded, offset)
             return self
 
         def encode(self):
