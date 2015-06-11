@@ -286,8 +286,7 @@ def decode_decimal(encoded, offset):
     fmt = '>Bi'
     decimals, integer = struct.unpack_from(fmt, encoded, offset)
     offset += struct.calcsize(fmt)
-    sign, digits, _ = decimal.Decimal(integer).as_tuple()
-    value = decimal.Decimal((sign, digits, -decimals))
+    value = decimal.Decimal(integer).scaleb(-decimals)
     return value, offset
 
 
