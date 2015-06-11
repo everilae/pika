@@ -131,14 +131,17 @@ def encode_decimal(pieces, value):
     # per spec, the "decimals" octet is unsigned (!)
     fmt = '>cBi'
     value = value.normalize()
-    if value.as_tuple().exponent < 0:
-        decimals = -value.as_tuple().exponent
-        raw = int(value * (decimal.Decimal(10) ** decimals))
-        pieces.append(struct.pack(fmt, b'D', decimals, raw))
+    sign, digits, exponent = value.as_tuple()
+
+    if exponent < 0:
+        decimals = -exponent
+        integer = int(decimal.Decimal((sign, digits, 0)))
 
     else:
-        pieces.append(struct.pack(fmt, b'D', 0, int(value)))
+        decimals = 0
+        integer = int(value)
 
+    pieces.append(struct.pack(fmt, b'D', decimals, integer))
     return struct.calcsize(fmt)
 
 
@@ -280,11 +283,11 @@ def decode_long_string(encoded, offset):
 def decode_decimal(encoded, offset):
     """Decode a decimal.
     """
-    decimals = struct.unpack_from('B', encoded, offset)[0]
-    offset += 1
-    raw = struct.unpack_from('>i', encoded, offset)[0]
-    offset += 4
-    value = decimal.Decimal(raw) * (decimal.Decimal(10) ** -decimals)
+    fmt = '>Bi'
+    decimals, integer = struct.unpack_from(fmt, encoded, offset)
+    offset += struct.calcsize(fmt)
+    sign, digits, _ = decimal.Decimal(integer).as_tuple()
+    value = decimal.Decimal((sign, digits, -decimals))
     return value, offset
 
 
