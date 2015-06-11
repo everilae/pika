@@ -22,6 +22,8 @@ if not PY2:
     # the unicode type is str
     unicode_type = str
 
+    # integer type(s)
+    int_types = (int,)
 
     def dictkeys(dct):
         """
@@ -84,6 +86,7 @@ else:
     dictvalues = dict.values
     byte = chr
     long = long
+    int_types = (int, long)
 
     def canonical_str(value):
         """
