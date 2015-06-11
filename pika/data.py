@@ -288,18 +288,34 @@ def decode_decimal(encoded, offset):
     return value, offset
 
 
+def _varlen_decoder(encoded, offset, fmt, type, decoder):
+    """Decode variable length data.
+    """
+    fmt = '>%s' % fmt
+    size = struct.unpack_from(fmt, encoded, offset)[0]
+    offset += struct.calcsize(fmt)
+
+    if not size:
+        return type(), offset
+
+    end = offset + size
+    items = []
+    while offset < end:
+        value, offset = decoder(encoded, offset)
+        items.append(value)
+
+    if offset > end:
+        raise RuntimeError(
+            "variable length data with incorrect length: offset=%r, end=%r" % (
+                offset, end))
+
+    return type(items), offset
+
+
 def decode_array(encoded, offset):
     """Decode an array.
     """
-    length = struct.unpack_from('>I', encoded, offset)[0]
-    offset += 4
-    offset_end = offset + length
-    value = []
-    while offset < offset_end:
-        v, offset = decode_value(encoded, offset)
-        value.append(v)
-
-    return value, offset
+    return _varlen_decoder(encoded, offset, 'I', list, decode_value)
 
 
 def decode_table(encoded, offset):
@@ -311,15 +327,12 @@ def decode_table(encoded, offset):
     :rtype: tuple
 
     """
-    result = OrderedDict()
-    tablesize = struct.unpack_from('>I', encoded, offset)[0]
-    offset += 4
-    limit = offset + tablesize
-    while offset < limit:
+    def _decoder(encoded, offset):
         key, offset = decode_short_string(encoded, offset)
         value, offset = decode_value(encoded, offset)
-        result[key] = value
-    return result, offset
+        return (key, value), offset
+
+    return _varlen_decoder(encoded, offset, 'I', OrderedDict, _decoder)
 
 
 _table_decoder_lookup = {
