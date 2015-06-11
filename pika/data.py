@@ -10,19 +10,45 @@ from pika import exceptions
 from pika.compat import unicode_type, PY2, long, as_bytes, int_types
 
 
-def _encode_string(pieces, value, fmt):
+def _simple_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
+    """Encode ``value`` and append to ``pieces``. Return size of encoded
+    value.
+    """
+    fmt = '>c%s' % fmt
+    pieces.append(struct.pack(fmt, type_octet, conv(value)))
+    return struct.calcsize(fmt)
+
+
+def _varlen_encoder(pieces, value, fmt, encoder):
+    """Encode variable length data.
+    """
+    fmt = '>%s' % fmt
+    hole = len(pieces)
+    pieces.append(None)  # placeholder
+    size = encoder(pieces, value)
+    pieces[hole] = struct.pack(fmt, size)
+    return struct.calcsize(fmt) + size
+
+
+def _typed_varlen_encoder(pieces, value, fmt, type_octet, encoder):
+    """Encode typed variable length data.
+    """
+    type_fmt = '>c'
+    pieces.append(struct.pack(type_fmt, type_octet))
+    return struct.calcsize(type_fmt) + _varlen_encoder(
+        pieces, value, fmt, encoder)
+
+
+def _string_encoder(pieces, value):
     """Generic string encoding
 
     :param list pieces: Already encoded values
     :param str value: String value to encode
-    :param str fmt: Packing format for length
     :rtype: int
     """
     encoded_value = as_bytes(value)
-    length = len(encoded_value)
-    pieces.append(struct.pack(fmt, length))
     pieces.append(encoded_value)
-    return struct.calcsize(fmt) + length
+    return len(encoded_value)
 
 
 def encode_short_string(pieces, value):
@@ -40,7 +66,7 @@ def encode_short_string(pieces, value):
     # or more octets of data. Short strings can carry up to 255 octets of UTF-8
     # data, but may not contain binary zero octets.
     try:
-        return _encode_string(pieces, value, 'B')
+        return _varlen_encoder(pieces, value, fmt='B', encoder=_string_encoder)
 
     except struct.error:
         raise ShortStringTooLong(value)
@@ -57,37 +83,7 @@ def encode_long_string(pieces, value):
 
     """
     # If someone is trying to encode over 4G string, let them suffer
-    return _encode_string(pieces, value, '>I')
-
-
-def _simple_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
-    """Encode ``value`` and append to ``pieces``. Return size of encoded
-    value.
-    """
-    fmt = '>c%s' % fmt
-    pieces.append(struct.pack(fmt, type_octet, conv(value)))
-    return struct.calcsize(fmt)
-
-
-def encode_table(pieces, table):
-    """Encode a dict as an AMQP table appending the encded table to the
-    pieces list passed in.
-
-    :param list pieces: Already encoded frame pieces
-    :param dict table: The dict to encode
-    :rtype: int
-
-    """
-    table = table or {}
-    length_index = len(pieces)
-    pieces.append(None)  # placeholder
-    tablesize = 0
-    for (key, value) in table.items():
-        tablesize += encode_short_string(pieces, key)
-        tablesize += encode_value(pieces, value)
-
-    pieces[length_index] = struct.pack('>I', tablesize)
-    return tablesize + 4
+    return _varlen_encoder(pieces, value, fmt='I', encoder=_string_encoder)
 
 
 def encode_float(pieces, value):
@@ -146,26 +142,54 @@ def encode_decimal(pieces, value):
     return struct.calcsize(fmt)
 
 
+def _array_encoder(pieces, value):
+    """Encode ``value`` array and return size.
+    """
+    if value:
+        return sum(map(partial(encode_value, pieces), value))
+
+    return 0
+
+
 def encode_array(pieces, value):
     """Encode list ``value`` and append to ``pieces``. Return size
     of encoded value.
     """
-    p = []
-    for v in value:
-        encode_value(p, v)
-    piece = b''.join(p)
-    fmt = '>cI'
-    pieces.append(struct.pack(fmt, b'A', len(piece)))
-    pieces.append(piece)
-    return struct.calcsize(fmt) + len(piece)
+    return _typed_varlen_encoder(
+        pieces, value, fmt='I', type_octet=b'A', encoder=_array_encoder)
+
+
+def _table_encoder(pieces, table):
+    """Encode ``table``, return ``size``.
+    """
+    size = 0
+    if table:
+        for key, value in table.items():
+            size += encode_short_string(pieces, key)
+            size += encode_value(pieces, value)
+            
+    return size
+
+
+def encode_table(pieces, table):
+    """Encode a dict as an AMQP table appending the encded table to the
+    pieces list passed in.
+
+    :param list pieces: Already encoded frame pieces
+    :param dict table: The dict to encode
+    :rtype: int
+
+    """
+    return _varlen_encoder(
+        pieces, table, fmt='I', encoder=_table_encoder)
 
 
 def encode_dict(pieces, value):
     """Encode dict ``value`` and append to ``pieces``. Return size
     of encoded value.
     """
-    pieces.append(struct.pack('>c', b'F'))
-    return 1 + encode_table(pieces, value)
+    return _typed_varlen_encoder(
+        pieces, value, fmt='I', type_octet=b'F', encoder=_table_encoder)
 
 
 _table_encoder_lookup = [

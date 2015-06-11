@@ -26,8 +26,9 @@ class DataTests(unittest.TestCase):
     maxDiff = None
 
     FIELD_TBL_ENCODED = (
-        b'\x00\x00\x00\xd3'
+        b'\x00\x00\x00\xe3'
         b'\x05arrayA\x00\x00\x00\x06b\x01b\x02b\x03'
+        b'\x0aemptyarrayA\x00\x00\x00\x00'
         b'\x07boolvalt\x01'
         b'\x07decimalD\x02\x00\x00\x01:'
         b'\x0bdecimal_tooD\x00\x00\x00\x00d'
@@ -46,6 +47,7 @@ class DataTests(unittest.TestCase):
 
     FIELD_TBL_VALUE = OrderedDict([
         ('array', [1, 2, 3]),
+        ('emptyarray', []),
         ('boolval', True),
         ('decimal', decimal.Decimal('3.14')),
         ('decimal_too', decimal.Decimal('100')),
@@ -70,12 +72,12 @@ class DataTests(unittest.TestCase):
     def test_encode_table_bytes(self):
         result = []
         byte_count = data.encode_table(result, self.FIELD_TBL_VALUE)
-        self.assertEqual(byte_count, 215)
+        self.assertEqual(byte_count, 231)
 
     def test_decode_table(self):
         value, byte_count = data.decode_table(self.FIELD_TBL_ENCODED, 0)
         self.assertDictEqual(value, self.FIELD_TBL_VALUE)
-        self.assertEqual(byte_count, 215)
+        self.assertEqual(byte_count, 231)
 
     def test_encode_raises(self):
         self.assertRaises(exceptions.UnsupportedAMQPFieldException,
