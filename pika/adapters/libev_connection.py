@@ -7,6 +7,7 @@ import warnings
 from collections import deque
 
 from pika.adapters.base_connection import BaseConnection
+from pika.compat import dictkeys
 
 LOGGER = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ class LibevConnection(BaseConnection):
         be wiped.
 
         """
-        for timer in self._active_timers:
+        for timer in dictkeys(self._active_timers):
             self.remove_timeout(timer)
         if global_sigint_watcher:
             global_sigint_watcher.stop()
