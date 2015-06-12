@@ -137,16 +137,9 @@ def encode_decimal(pieces, value):
     of encoded value.
     """
     value = value.normalize()
-    sign, digits, exponent = value.as_tuple()
-
-    if exponent < 0:
-        decimals = -exponent
-        integer = int(decimal.Decimal((sign, digits, 0)))
-
-    else:
-        decimals = 0
-        integer = int(value)
-
+    _, _, exponent = value.as_tuple()
+    decimals = -min([0, exponent])
+    integer = int(value.scaleb(decimals))
     # per spec, the "decimals" octet is unsigned (!)
     fmt = '>cBi'
     pieces.append(struct.pack(fmt, b'D', decimals, integer))
