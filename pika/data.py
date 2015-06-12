@@ -97,18 +97,19 @@ def encode_float(pieces, value):
     """
     try:
         # Floats as IEEE-754
-        tmp = []
-        size = _type_encoder(tmp, b'f') + _simple_encoder(tmp, value, 'f')
-        pieces.extend(tmp)
-        return size
+        type_octet = b'f'
+        buf = struct.pack(ENDIAN_FMT % 'f', value)
 
     except OverflowError:
         # Doubles as RFC1832 XDR doubles
+        type_octet = b'd'
         packer = xdrlib.Packer()
         packer.pack_double(value)
         buf = packer.get_buffer()
-        pieces.extend([struct.pack(TYPE_FMT, b'd'), buf])
-        return struct.calcsize(TYPE_FMT) + len(buf)
+
+    size = _type_encoder(pieces, type_octet) + len(buf)
+    pieces.append(buf)
+    return size
 
 
 def encode_integer(pieces, value, fmt=None):
