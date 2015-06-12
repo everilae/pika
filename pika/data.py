@@ -10,18 +10,7 @@ from collections import OrderedDict
 from pika import exceptions
 from pika.compat import unicode_type, PY2, long, as_bytes, int_types
 
-TYPE_FMT = '>c'
 ENDIAN_FMT = '>%s'
-
-
-def _type_encoder(pieces, type_octet):
-    """Encode ``type_octet`` and append to ``pieces``.
-    """
-    if type_octet:
-        pieces.append(struct.pack(TYPE_FMT, type_octet))
-        return struct.calcsize(TYPE_FMT)
-
-    return 0
 
 
 def _simple_encoder(pieces, value, fmt, conv=lambda x: x):
@@ -31,6 +20,15 @@ def _simple_encoder(pieces, value, fmt, conv=lambda x: x):
     fmt = ENDIAN_FMT % fmt
     pieces.append(struct.pack(fmt, conv(value)))
     return struct.calcsize(fmt)
+
+
+def _type_encoder(pieces, type_octet):
+    """Encode ``type_octet`` and append to ``pieces``.
+    """
+    if type_octet:
+        return _simple_encoder(pieces, type_octet, 'c')
+
+    return 0
 
 
 def _varlen_encoder(pieces, value, fmt, encoder):
