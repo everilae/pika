@@ -11,34 +11,37 @@ from pika import exceptions
 from pika.compat import unicode_type, PY2, long, as_bytes, int_types
 
 TYPE_FMT = '>c'
+ENDIAN_FMT = '>%s'
 
 
-def _simple_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
+def _type_encoder(pieces, type_octet):
+    """Encode ``type_octet`` and append to ``pieces``.
+    """
+    if type_octet:
+        pieces.append(struct.pack(TYPE_FMT, type_octet))
+        return struct.calcsize(TYPE_FMT)
+
+    return 0
+
+
+def _simple_encoder(pieces, value, fmt, conv=lambda x: x):
     """Encode ``value`` and append to ``pieces``. Return size of encoded
     value.
     """
-    fmt = '>c%s' % fmt
-    pieces.append(struct.pack(fmt, type_octet, conv(value)))
+    fmt = ENDIAN_FMT % fmt
+    pieces.append(struct.pack(fmt, conv(value)))
     return struct.calcsize(fmt)
 
 
 def _varlen_encoder(pieces, value, fmt, encoder):
     """Encode variable length data.
     """
-    fmt = '>%s' % fmt
+    fmt = ENDIAN_FMT % fmt
     hole = len(pieces)
     pieces.append(None)  # placeholder
     size = encoder(pieces, value)
     pieces[hole] = struct.pack(fmt, size)
     return struct.calcsize(fmt) + size
-
-
-def _typed_varlen_encoder(pieces, value, fmt, type_octet, encoder):
-    """Encode typed variable length data.
-    """
-    pieces.append(struct.pack(TYPE_FMT, type_octet))
-    return struct.calcsize(TYPE_FMT) + _varlen_encoder(
-        pieces, value, fmt, encoder)
 
 
 def _string_encoder(pieces, value):
@@ -94,7 +97,10 @@ def encode_float(pieces, value):
     """
     try:
         # Floats as IEEE-754
-        return _simple_encoder(pieces, value, 'f', b'f')
+        tmp = []
+        size = _type_encoder(tmp, b'f') + _simple_encoder(tmp, value, 'f')
+        pieces.extend(tmp)
+        return size
 
     except OverflowError:
         # Doubles as RFC1832 XDR doubles
@@ -110,24 +116,28 @@ def encode_integer(pieces, value, fmt=None):
     encoded value. This function tries to automatically choose the best
     fitting integer representation for given value.
     """
+    encode = (lambda type_octet, fmt:
+              _type_encoder(pieces, type_octet) +
+              _simple_encoder(pieces, value, fmt))
+
     if -128 <= value <= 127:
         # short-short-int
-        return _simple_encoder(pieces, value, 'b', b'b')
+        return encode(b'b', 'b')
 
     elif -32768 <= value <= 32767:
         # short-int
-        return _simple_encoder(pieces, value, 'h', b'U')
+        return encode(b'U', 'h')
 
     elif -2147483648 <= value <= 2147483647:
         # long-int
-        return _simple_encoder(pieces, value, 'i', b'I')
+        return encode(b'I', 'i')
 
     elif -9223372036854775808 <= value <= 9223372036854775807:
         # long-long-int
         # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
         # there's a conflict between AMQP 0-9-1 and RabbitMQ:
         # long long int is 'L' in AMQP, but 'l' in RabbitMQ
-        return _simple_encoder(pieces, value, 'q', b'l')
+        return encode(b'l', 'q')
 
     raise OverflowError("integer too large")
 
@@ -141,8 +151,8 @@ def encode_decimal(pieces, value):
     decimals = -min([0, exponent])
     integer = int(value.scaleb(decimals))
     # per spec, the "decimals" octet is unsigned (!)
-    fmt = '>cBi'
-    pieces.append(struct.pack(fmt, b'D', decimals, integer))
+    fmt = '>Bi'
+    pieces.append(struct.pack(fmt, decimals, integer))
     return struct.calcsize(fmt)
 
 
@@ -159,8 +169,7 @@ def encode_array(pieces, value):
     """Encode list ``value`` and append to ``pieces``. Return size
     of encoded value.
     """
-    return _typed_varlen_encoder(
-        pieces, value, fmt='I', type_octet=b'A', encoder=_array_encoder)
+    return _varlen_encoder(pieces, value, fmt='I', encoder=_array_encoder)
 
 
 def _table_encoder(pieces, table):
@@ -184,35 +193,18 @@ def encode_table(pieces, table):
     :rtype: int
 
     """
-    return _varlen_encoder(
-        pieces, table, fmt='I', encoder=_table_encoder)
-
-
-def encode_dict(pieces, value):
-    """Encode dict ``value`` and append to ``pieces``. Return size
-    of encoded value.
-    """
-    return _typed_varlen_encoder(
-        pieces, value, fmt='I', type_octet=b'F', encoder=_table_encoder)
-
-
-def _encode_typed_long_string(pieces, value):
-    """
-    """
-    pieces.append(struct.pack(TYPE_FMT, b'S'))
-    return struct.calcsize(TYPE_FMT) + encode_long_string(pieces, value)
-
+    return _varlen_encoder(pieces, table, fmt='I', encoder=_table_encoder)
 
 _table_encoder_lookup = [
-    (basestring if PY2 else str, _encode_typed_long_string),
-    (bool, partial(_simple_encoder, fmt='B', type_octet=b't')),
-    (int_types, encode_integer),
-    (datetime, partial(_simple_encoder, fmt='Q', type_octet=b'T',
-                       conv=lambda v: calendar.timegm(v.utctimetuple()))),
-    (float, encode_float),
-    (decimal.Decimal, encode_decimal),
-    (dict, encode_dict),
-    (list, encode_array),
+    (basestring if PY2 else str, b'S', encode_long_string),
+    (bool, b't', partial(_simple_encoder, fmt='B')),
+    (int_types, None, encode_integer),
+    (datetime, b'T', partial(_simple_encoder, fmt='Q',
+                             conv=lambda v: calendar.timegm(v.utctimetuple()))),
+    (float, None, encode_float),
+    (decimal.Decimal, b'D', encode_decimal),
+    (dict, b'F', encode_table),
+    (list, b'A', encode_array),
 ]
 
 
@@ -227,12 +219,11 @@ def encode_value(pieces, value):
     """
     # Special case, in theory doable with (type(None), ...), but not worth it
     if value is None:
-        pieces.append(struct.pack(TYPE_FMT, b'V'))
-        return 1
+        return _type_encoder(pieces, b'V')
 
-    for type, encoder in _table_encoder_lookup:
-        if isinstance(value, type):
-            return encoder(pieces, value)
+    for klass, type_octet, encoder in _table_encoder_lookup:
+        if isinstance(value, klass):
+            return _type_encoder(pieces, type_octet) + encoder(pieces, value)
 
     raise exceptions.UnsupportedAMQPFieldException(pieces, value)
 
@@ -307,7 +298,7 @@ def decode_decimal(encoded, offset):
 def _varlen_decoder(encoded, offset, fmt, type, decoder):
     """Decode variable length data.
     """
-    fmt = '>%s' % fmt
+    fmt = ENDIAN_FMT % fmt
     size = struct.unpack_from(fmt, encoded, offset)[0]
     offset += struct.calcsize(fmt)
 
