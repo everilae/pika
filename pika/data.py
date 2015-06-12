@@ -2,6 +2,7 @@
 import struct
 import decimal
 import calendar
+import xdrlib  # doubles
 from datetime import datetime
 from functools import partial
 from collections import OrderedDict
@@ -92,10 +93,16 @@ def encode_float(pieces, value):
     of encoded value.
     """
     try:
+        # Floats as IEEE-754
         return _simple_encoder(pieces, value, 'f', b'f')
 
     except OverflowError:
-        return _simple_encoder(pieces, value, 'd', b'd')
+        # Doubles as RFC1832 XDR doubles
+        packer = xdrlib.Packer()
+        packer.pack_double(value)
+        buf = packer.get_buffer()
+        pieces.extend([struct.pack(TYPE_FMT, b'd'), buf])
+        return struct.calcsize(TYPE_FMT) + len(buf)
 
 
 def encode_integer(pieces, value, fmt=None):
@@ -284,6 +291,16 @@ def decode_long_string(encoded, offset):
     return _decode_string(encoded, offset, '>I')
 
 
+def decode_double(encoded, offset):
+    """Decode an RFC1832 XDR double.
+    """
+    # The standard defines the encoding for the double-precision
+    # floating-point data type "double" (64 bits or 8 bytes).
+    size = 8
+    unpacker = xdrlib.Unpacker(encoded[offset:offset + size])
+    return unpacker.unpack_double(), offset + size
+
+
 def decode_decimal(encoded, offset):
     """Decode a decimal.
     """
@@ -355,7 +372,7 @@ _table_decoder_lookup = {
     b'l': partial(_simple_decoder, fmt='>q', type=long),
     #b'l': partial(_simple_decoder, fmt='>Q', type=long),
     b'f': partial(_simple_decoder, fmt='>f'),
-    b'd': partial(_simple_decoder, fmt='>d'),
+    b'd': decode_double,
     b'D': decode_decimal,
     b's': decode_short_string,
     b'S': decode_long_string,
