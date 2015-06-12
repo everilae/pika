@@ -9,6 +9,8 @@ from collections import OrderedDict
 from pika import exceptions
 from pika.compat import unicode_type, PY2, long, as_bytes, int_types
 
+TYPE_FMT = '>c'
+
 
 def _simple_encoder(pieces, value, fmt, type_octet, conv=lambda x: x):
     """Encode ``value`` and append to ``pieces``. Return size of encoded
@@ -33,9 +35,8 @@ def _varlen_encoder(pieces, value, fmt, encoder):
 def _typed_varlen_encoder(pieces, value, fmt, type_octet, encoder):
     """Encode typed variable length data.
     """
-    type_fmt = '>c'
-    pieces.append(struct.pack(type_fmt, type_octet))
-    return struct.calcsize(type_fmt) + _varlen_encoder(
+    pieces.append(struct.pack(TYPE_FMT, type_octet))
+    return struct.calcsize(TYPE_FMT) + _varlen_encoder(
         pieces, value, fmt, encoder)
 
 
@@ -118,7 +119,7 @@ def encode_integer(pieces, value, fmt=None):
         # long-long-int
         # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
         # there's a conflict between AMQP 0-9-1 and RabbitMQ:
-        # long long int is 'L' AMQP, but 'l' in RabbitMQ
+        # long long int is 'L' in AMQP, but 'l' in RabbitMQ
         return _simple_encoder(pieces, value, 'q', b'l')
 
     raise OverflowError("integer too large")
@@ -128,8 +129,6 @@ def encode_decimal(pieces, value):
     """Encode decimal ``value`` and append to ``pieces``. Return size
     of encoded value.
     """
-    # per spec, the "decimals" octet is unsigned (!)
-    fmt = '>cBi'
     value = value.normalize()
     sign, digits, exponent = value.as_tuple()
 
@@ -141,6 +140,8 @@ def encode_decimal(pieces, value):
         decimals = 0
         integer = int(value)
 
+    # per spec, the "decimals" octet is unsigned (!)
+    fmt = '>cBi'
     pieces.append(struct.pack(fmt, b'D', decimals, integer))
     return struct.calcsize(fmt)
 
@@ -195,7 +196,15 @@ def encode_dict(pieces, value):
         pieces, value, fmt='I', type_octet=b'F', encoder=_table_encoder)
 
 
+def _encode_typed_long_string(pieces, value):
+    """
+    """
+    pieces.append(struct.pack(TYPE_FMT, b'S'))
+    return struct.calcsize(TYPE_FMT) + encode_long_string(pieces, value)
+
+
 _table_encoder_lookup = [
+    (basestring if PY2 else str, _encode_typed_long_string),
     (bool, partial(_simple_encoder, fmt='B', type_octet=b't')),
     (int_types, encode_integer),
     (datetime, partial(_simple_encoder, fmt='Q', type_octet=b'T',
@@ -216,19 +225,14 @@ def encode_value(pieces, value):
     :rtype: int
 
     """
-
-    # support only str on Python 3
-    if isinstance(value, basestring if PY2 else str):
-        pieces.append(struct.pack('c', b'S'))
-        return struct.calcsize('c') + encode_long_string(pieces, value)
+    # Special case, in theory doable with (type(None), ...), but not worth it
+    if value is None:
+        pieces.append(struct.pack(TYPE_FMT, b'V'))
+        return 1
 
     for type, encoder in _table_encoder_lookup:
         if isinstance(value, type):
             return encoder(pieces, value)
-
-    if value is None:
-        pieces.append(struct.pack('>c', b'V'))
-        return 1
 
     raise exceptions.UnsupportedAMQPFieldException(pieces, value)
 
