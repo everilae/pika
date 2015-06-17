@@ -227,7 +227,7 @@ def generate(specPath):
         print("            partial_flags = flags & 0xFFFE")
         print("            if remainder != 0:")
         print("                partial_flags |= 1")
-        print("            data.encode_shortshort_uint(flag_pieces, partial_flags)")
+        print("            data.encode_short_uint(flag_pieces, partial_flags)")
         print("            flags = remainder")
         print("            if not flags:")
         print("                break")

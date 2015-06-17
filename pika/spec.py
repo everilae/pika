@@ -2102,7 +2102,7 @@ class BasicProperties(amqp_object.Properties):
             partial_flags = flags & 0xFFFE
             if remainder != 0:
                 partial_flags |= 1
-            data.encode_shortshort_uint(flag_pieces, partial_flags)
+            data.encode_short_uint(flag_pieces, partial_flags)
             flags = remainder
             if not flags:
                 break
