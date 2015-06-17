@@ -1964,20 +1964,20 @@ class BasicProperties(amqp_object.Properties):
         self.cluster_id = cluster_id
 
     _prop_decoders = {
-        BasicProperties.FLAG_CONTENT_TYPE: data.decode_short_string
-        BasicProperties.FLAG_CONTENT_ENCODING: data.decode_short_string
-        BasicProperties.FLAG_HEADERS: data.decode_table
-        BasicProperties.FLAG_DELIVERY_MODE: data.decode_shortshort_uint
-        BasicProperties.FLAG_PRIORITY: data.decode_shortshort_uint
-        BasicProperties.FLAG_CORRELATION_ID: data.decode_short_string
-        BasicProperties.FLAG_REPLY_TO: data.decode_short_string
-        BasicProperties.FLAG_EXPIRATION: data.decode_short_string
-        BasicProperties.FLAG_MESSAGE_ID: data.decode_short_string
-        BasicProperties.FLAG_TIMESTAMP: data.decode_longlong_uint
-        BasicProperties.FLAG_TYPE: data.decode_short_string
-        BasicProperties.FLAG_USER_ID: data.decode_short_string
-        BasicProperties.FLAG_APP_ID: data.decode_short_string
-        BasicProperties.FLAG_CLUSTER_ID: data.decode_short_string
+        FLAG_CONTENT_TYPE: data.decode_short_string,
+        FLAG_CONTENT_ENCODING: data.decode_short_string,
+        FLAG_HEADERS: data.decode_table,
+        FLAG_DELIVERY_MODE: data.decode_shortshort_uint,
+        FLAG_PRIORITY: data.decode_shortshort_uint,
+        FLAG_CORRELATION_ID: data.decode_short_string,
+        FLAG_REPLY_TO: data.decode_short_string,
+        FLAG_EXPIRATION: data.decode_short_string,
+        FLAG_MESSAGE_ID: data.decode_short_string,
+        FLAG_TIMESTAMP: data.decode_longlong_uint,
+        FLAG_TYPE: data.decode_short_string,
+        FLAG_USER_ID: data.decode_short_string,
+        FLAG_APP_ID: data.decode_short_string,
+        FLAG_CLUSTER_ID: data.decode_short_string,
     }
 
     def _get_prop(self, prop, flags, encoded, offset):
@@ -2010,71 +2010,46 @@ class BasicProperties(amqp_object.Properties):
         self.cluster_id, offset = self._get_prop(BasicProperties.FLAG_CLUSTER_ID, flags, encoded, offset)
         return self
 
+    _prop_encoders = {
+        FLAG_CONTENT_TYPE: data.encode_short_string,
+        FLAG_CONTENT_ENCODING: data.encode_short_string,
+        FLAG_HEADERS: data.encode_table,
+        FLAG_DELIVERY_MODE: data.encode_shortshort_uint,
+        FLAG_PRIORITY: data.encode_shortshort_uint,
+        FLAG_CORRELATION_ID: data.encode_short_string,
+        FLAG_REPLY_TO: data.encode_short_string,
+        FLAG_EXPIRATION: data.encode_short_string,
+        FLAG_MESSAGE_ID: data.encode_short_string,
+        FLAG_TIMESTAMP: data.encode_longlong_uint,
+        FLAG_TYPE: data.encode_short_string,
+        FLAG_USER_ID: data.encode_short_string,
+        FLAG_APP_ID: data.encode_short_string,
+        FLAG_CLUSTER_ID: data.encode_short_string,
+    }
+
+    def _set_prop(self, prop, flags, pieces, value):
+        if value is not None:
+            flags = flags | prop
+            self._prop_encoders[prop](pieces, value)
+        return flags
+
     def encode(self):
         pieces = list()
         flags = 0
-        if self.content_type is not None:
-            flags = flags | BasicProperties.FLAG_CONTENT_TYPE
-            assert isinstance(self.content_type, str_or_bytes),\
-                   'A non-string value was supplied for self.content_type'
-            data.encode_short_string(pieces, self.content_type)
-        if self.content_encoding is not None:
-            flags = flags | BasicProperties.FLAG_CONTENT_ENCODING
-            assert isinstance(self.content_encoding, str_or_bytes),\
-                   'A non-string value was supplied for self.content_encoding'
-            data.encode_short_string(pieces, self.content_encoding)
-        if self.headers is not None:
-            flags = flags | BasicProperties.FLAG_HEADERS
-            data.encode_table(pieces, self.headers)
-        if self.delivery_mode is not None:
-            flags = flags | BasicProperties.FLAG_DELIVERY_MODE
-            data.encode_shortshort_uint(pieces, self.delivery_mode)
-        if self.priority is not None:
-            flags = flags | BasicProperties.FLAG_PRIORITY
-            data.encode_shortshort_uint(pieces, self.priority)
-        if self.correlation_id is not None:
-            flags = flags | BasicProperties.FLAG_CORRELATION_ID
-            assert isinstance(self.correlation_id, str_or_bytes),\
-                   'A non-string value was supplied for self.correlation_id'
-            data.encode_short_string(pieces, self.correlation_id)
-        if self.reply_to is not None:
-            flags = flags | BasicProperties.FLAG_REPLY_TO
-            assert isinstance(self.reply_to, str_or_bytes),\
-                   'A non-string value was supplied for self.reply_to'
-            data.encode_short_string(pieces, self.reply_to)
-        if self.expiration is not None:
-            flags = flags | BasicProperties.FLAG_EXPIRATION
-            assert isinstance(self.expiration, str_or_bytes),\
-                   'A non-string value was supplied for self.expiration'
-            data.encode_short_string(pieces, self.expiration)
-        if self.message_id is not None:
-            flags = flags | BasicProperties.FLAG_MESSAGE_ID
-            assert isinstance(self.message_id, str_or_bytes),\
-                   'A non-string value was supplied for self.message_id'
-            data.encode_short_string(pieces, self.message_id)
-        if self.timestamp is not None:
-            flags = flags | BasicProperties.FLAG_TIMESTAMP
-            data.encode_longlong_uint(pieces, self.timestamp)
-        if self.type is not None:
-            flags = flags | BasicProperties.FLAG_TYPE
-            assert isinstance(self.type, str_or_bytes),\
-                   'A non-string value was supplied for self.type'
-            data.encode_short_string(pieces, self.type)
-        if self.user_id is not None:
-            flags = flags | BasicProperties.FLAG_USER_ID
-            assert isinstance(self.user_id, str_or_bytes),\
-                   'A non-string value was supplied for self.user_id'
-            data.encode_short_string(pieces, self.user_id)
-        if self.app_id is not None:
-            flags = flags | BasicProperties.FLAG_APP_ID
-            assert isinstance(self.app_id, str_or_bytes),\
-                   'A non-string value was supplied for self.app_id'
-            data.encode_short_string(pieces, self.app_id)
-        if self.cluster_id is not None:
-            flags = flags | BasicProperties.FLAG_CLUSTER_ID
-            assert isinstance(self.cluster_id, str_or_bytes),\
-                   'A non-string value was supplied for self.cluster_id'
-            data.encode_short_string(pieces, self.cluster_id)
+        flags = self._set_prop(BasicProperties.FLAG_CONTENT_TYPE, flags, pieces, self.content_type)
+        flags = self._set_prop(BasicProperties.FLAG_CONTENT_ENCODING, flags, pieces, self.content_encoding)
+        flags = self._set_prop(BasicProperties.FLAG_HEADERS, flags, pieces, self.headers)
+        flags = self._set_prop(BasicProperties.FLAG_DELIVERY_MODE, flags, pieces, self.delivery_mode)
+        flags = self._set_prop(BasicProperties.FLAG_PRIORITY, flags, pieces, self.priority)
+        flags = self._set_prop(BasicProperties.FLAG_CORRELATION_ID, flags, pieces, self.correlation_id)
+        flags = self._set_prop(BasicProperties.FLAG_REPLY_TO, flags, pieces, self.reply_to)
+        flags = self._set_prop(BasicProperties.FLAG_EXPIRATION, flags, pieces, self.expiration)
+        flags = self._set_prop(BasicProperties.FLAG_MESSAGE_ID, flags, pieces, self.message_id)
+        flags = self._set_prop(BasicProperties.FLAG_TIMESTAMP, flags, pieces, self.timestamp)
+        flags = self._set_prop(BasicProperties.FLAG_TYPE, flags, pieces, self.type)
+        flags = self._set_prop(BasicProperties.FLAG_USER_ID, flags, pieces, self.user_id)
+        flags = self._set_prop(BasicProperties.FLAG_APP_ID, flags, pieces, self.app_id)
+        flags = self._set_prop(BasicProperties.FLAG_CLUSTER_ID, flags, pieces, self.cluster_id)
         flag_pieces = list()
         while True:
             remainder = flags >> 16

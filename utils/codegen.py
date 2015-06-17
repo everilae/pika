@@ -154,11 +154,11 @@ def generate(specPath):
         print("            return self")
         print('')
 
-    def genPropertyDecoderLookup(c):
-        print("    _prop_decoders = {")
+    def genPropertyCoderLookup(c, verb):
+        print("    _prop_%srs = {" % verb)
         for f in c.fields:
-            print("        %s: %s" % (flagName(c, f),
-                                      _get_handler(f.domain, 'decode')))
+            print("        %s: %s," % (flagName(None, f),
+                                      _get_handler(f.domain, verb)))
         print("    }")
         print("")
 
@@ -219,6 +219,12 @@ def generate(specPath):
         print('')
 
     def genEncodeProperties(c):
+        print("    def _set_prop(self, prop, flags, pieces, value):")
+        print("        if value is not None:")
+        print("            flags = flags | prop")
+        print("            self._prop_encoders[prop](pieces, value)")
+        print("        return flags")
+        print("")
         print("    def encode(self):")
         print("        pieces = list()")
         print("        flags = 0")
@@ -227,10 +233,8 @@ def generate(specPath):
                 print("        if self.%s: flags = flags | %s" %
                       (pyize(f.name), flagName(c, f)))
             else:
-                print("        if self.%s is not None:" % (pyize(f.name),))
-                print("            flags = flags | %s" % (flagName(c, f),))
-                genSingleEncode("            ", "self.%s" % (pyize(f.name),),
-                                f.domain)
+                print("        flags = self._set_prop(%s, flags, pieces, self.%s)" % (
+                    flagName(c, f), pyize(f.name)))
         print("        flag_pieces = list()")
         print("        while True:")
         print("            remainder = flags >> 16")
@@ -342,8 +346,9 @@ str = bytes
 
             print("    def __init__(self%s):" % (fieldDeclList(c.fields),))
             print(fieldInitList('        ', c.fields))
-            genPropertyDecoderLookup(c)
+            genPropertyCoderLookup(c, 'decode')
             genDecodeProperties(c)
+            genPropertyCoderLookup(c, 'encode')
             genEncodeProperties(c)
 
     print("methods = {")
