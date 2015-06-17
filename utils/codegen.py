@@ -154,10 +154,18 @@ def generate(specPath):
         print("            return self")
         print('')
 
+    def genPropertyDecoderLookup(c):
+        print("    _prop_decoders = {")
+        for f in c.fields:
+            print("        %s: %s" % (flagName(c, f),
+                                      _get_handler(f.domain, 'decode')))
+        print("    }")
+        print("")
+
     def genDecodeProperties(c):
-        print("    def _get_prop(self, flags, prop, decoder, encoded, offset):")
+        print("    def _get_prop(self, prop, flags, encoded, offset):")
         print("        if flags & prop:")
-        print("            return decoder(encoded, offset)")
+        print("            return self._prop_decoders[prop](encoded, offset)")
         print("        return None, offset")
         print("")
         print("    def decode(self, encoded, offset=0):")
@@ -174,8 +182,8 @@ def generate(specPath):
                 print("        self.%s = (flags & %s) != 0" %
                       (pyize(f.name), flagName(c, f)))
             else:
-                print("        self.%s, offset = self._get_prop(flags, %s, %s, encoded, offset)" % (
-                    pyize(f.name), flagName(c, f), _get_handler(f.domain, 'decode')))
+                print("        self.%s, offset = self._get_prop(%s, flags, encoded, offset)" % (
+                    pyize(f.name), flagName(c, f)))
         print("        return self")
         print('')
 
@@ -334,6 +342,7 @@ str = bytes
 
             print("    def __init__(self%s):" % (fieldDeclList(c.fields),))
             print(fieldInitList('        ', c.fields))
+            genPropertyDecoderLookup(c)
             genDecodeProperties(c)
             genEncodeProperties(c)
 
