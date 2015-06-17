@@ -69,19 +69,17 @@ class Connection(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.version_major = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
-            self.version_minor = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
-            (self.server_properties, offset) = data.decode_table(encoded, offset)
+            self.version_major, offset = data.decode_shortshort_uint(encoded, offset)
+            self.version_minor, offset = data.decode_shortshort_uint(encoded, offset)
+            self.server_properties, offset = data.decode_table(encoded, offset)
             self.mechanisms, offset = data.decode_long_string(encoded, offset)
             self.locales, offset = data.decode_long_string(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('B', self.version_major))
-            pieces.append(struct.pack('B', self.version_minor))
+            data.encode_shortshort_uint(pieces, self.version_major)
+            data.encode_shortshort_uint(pieces, self.version_minor)
             data.encode_table(pieces, self.server_properties)
             assert isinstance(self.mechanisms, str_or_bytes),\
                    'A non-string value was supplied for self.mechanisms'
@@ -107,7 +105,7 @@ class Connection(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            (self.client_properties, offset) = data.decode_table(encoded, offset)
+            self.client_properties, offset = data.decode_table(encoded, offset)
             self.mechanism, offset = data.decode_short_string(encoded, offset)
             self.response, offset = data.decode_long_string(encoded, offset)
             self.locale, offset = data.decode_short_string(encoded, offset)
@@ -188,19 +186,16 @@ class Connection(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.channel_max = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
-            self.frame_max = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.heartbeat = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.channel_max, offset = data.decode_short_uint(encoded, offset)
+            self.frame_max, offset = data.decode_long_uint(encoded, offset)
+            self.heartbeat, offset = data.decode_short_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.channel_max))
-            pieces.append(struct.pack('>I', self.frame_max))
-            pieces.append(struct.pack('>H', self.heartbeat))
+            data.encode_short_uint(pieces, self.channel_max)
+            data.encode_long_uint(pieces, self.frame_max)
+            data.encode_short_uint(pieces, self.heartbeat)
             return pieces
 
     class TuneOk(amqp_object.Method):
@@ -218,19 +213,16 @@ class Connection(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.channel_max = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
-            self.frame_max = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.heartbeat = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.channel_max, offset = data.decode_short_uint(encoded, offset)
+            self.frame_max, offset = data.decode_long_uint(encoded, offset)
+            self.heartbeat, offset = data.decode_short_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.channel_max))
-            pieces.append(struct.pack('>I', self.frame_max))
-            pieces.append(struct.pack('>H', self.heartbeat))
+            data.encode_short_uint(pieces, self.channel_max)
+            data.encode_long_uint(pieces, self.frame_max)
+            data.encode_short_uint(pieces, self.heartbeat)
             return pieces
 
     class Open(amqp_object.Method):
@@ -250,8 +242,7 @@ class Connection(amqp_object.Class):
         def decode(self, encoded, offset=0):
             self.virtual_host, offset = data.decode_short_string(encoded, offset)
             self.capabilities, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.insist = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -266,7 +257,7 @@ class Connection(amqp_object.Class):
             bit_buffer = 0
             if self.insist:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class OpenOk(amqp_object.Method):
@@ -308,23 +299,20 @@ class Connection(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.reply_code = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.reply_code, offset = data.decode_short_uint(encoded, offset)
             self.reply_text, offset = data.decode_short_string(encoded, offset)
-            self.class_id = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
-            self.method_id = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.class_id, offset = data.decode_short_uint(encoded, offset)
+            self.method_id, offset = data.decode_short_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.reply_code))
+            data.encode_short_uint(pieces, self.reply_code)
             assert isinstance(self.reply_text, str_or_bytes),\
                    'A non-string value was supplied for self.reply_text'
             data.encode_short_string(pieces, self.reply_text)
-            pieces.append(struct.pack('>H', self.class_id))
-            pieces.append(struct.pack('>H', self.method_id))
+            data.encode_short_uint(pieces, self.class_id)
+            data.encode_short_uint(pieces, self.method_id)
             return pieces
 
     class CloseOk(amqp_object.Method):
@@ -453,8 +441,7 @@ class Channel(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.active = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -463,7 +450,7 @@ class Channel(amqp_object.Class):
             bit_buffer = 0
             if self.active:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class FlowOk(amqp_object.Method):
@@ -479,8 +466,7 @@ class Channel(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.active = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -489,7 +475,7 @@ class Channel(amqp_object.Class):
             bit_buffer = 0
             if self.active:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class Close(amqp_object.Method):
@@ -508,23 +494,20 @@ class Channel(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.reply_code = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.reply_code, offset = data.decode_short_uint(encoded, offset)
             self.reply_text, offset = data.decode_short_string(encoded, offset)
-            self.class_id = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
-            self.method_id = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.class_id, offset = data.decode_short_uint(encoded, offset)
+            self.method_id, offset = data.decode_short_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.reply_code))
+            data.encode_short_uint(pieces, self.reply_code)
             assert isinstance(self.reply_text, str_or_bytes),\
                    'A non-string value was supplied for self.reply_text'
             data.encode_short_string(pieces, self.reply_text)
-            pieces.append(struct.pack('>H', self.class_id))
-            pieces.append(struct.pack('>H', self.method_id))
+            data.encode_short_uint(pieces, self.class_id)
+            data.encode_short_uint(pieces, self.method_id)
             return pieces
 
     class CloseOk(amqp_object.Method):
@@ -571,8 +554,7 @@ class Access(amqp_object.Class):
 
         def decode(self, encoded, offset=0):
             self.realm, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.exclusive = (bit_buffer & (1 << 0)) != 0
             self.passive = (bit_buffer & (1 << 1)) != 0
             self.active = (bit_buffer & (1 << 2)) != 0
@@ -596,7 +578,7 @@ class Access(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 3)
             if self.read:
                 bit_buffer = bit_buffer | (1 << 4)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class RequestOk(amqp_object.Method):
@@ -612,13 +594,12 @@ class Access(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             return pieces
 
 
@@ -648,23 +629,21 @@ class Exchange(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.type, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.passive = (bit_buffer & (1 << 0)) != 0
             self.durable = (bit_buffer & (1 << 1)) != 0
             self.auto_delete = (bit_buffer & (1 << 2)) != 0
             self.internal = (bit_buffer & (1 << 3)) != 0
             self.nowait = (bit_buffer & (1 << 4)) != 0
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.exchange, str_or_bytes),\
                    'A non-string value was supplied for self.exchange'
             data.encode_short_string(pieces, self.exchange)
@@ -682,7 +661,7 @@ class Exchange(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 3)
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 4)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             data.encode_table(pieces, self.arguments)
             return pieces
 
@@ -721,18 +700,16 @@ class Exchange(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.exchange, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.if_unused = (bit_buffer & (1 << 0)) != 0
             self.nowait = (bit_buffer & (1 << 1)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.exchange, str_or_bytes),\
                    'A non-string value was supplied for self.exchange'
             data.encode_short_string(pieces, self.exchange)
@@ -741,7 +718,7 @@ class Exchange(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 0)
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 1)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class DeleteOk(amqp_object.Method):
@@ -781,20 +758,18 @@ class Exchange(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.destination, offset = data.decode_short_string(encoded, offset)
             self.source, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.nowait = (bit_buffer & (1 << 0)) != 0
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.destination, str_or_bytes),\
                    'A non-string value was supplied for self.destination'
             data.encode_short_string(pieces, self.destination)
@@ -807,7 +782,7 @@ class Exchange(amqp_object.Class):
             bit_buffer = 0
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             data.encode_table(pieces, self.arguments)
             return pieces
 
@@ -848,20 +823,18 @@ class Exchange(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.destination, offset = data.decode_short_string(encoded, offset)
             self.source, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.nowait = (bit_buffer & (1 << 0)) != 0
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.destination, str_or_bytes),\
                    'A non-string value was supplied for self.destination'
             data.encode_short_string(pieces, self.destination)
@@ -874,7 +847,7 @@ class Exchange(amqp_object.Class):
             bit_buffer = 0
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             data.encode_table(pieces, self.arguments)
             return pieces
 
@@ -923,22 +896,20 @@ class Queue(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.passive = (bit_buffer & (1 << 0)) != 0
             self.durable = (bit_buffer & (1 << 1)) != 0
             self.exclusive = (bit_buffer & (1 << 2)) != 0
             self.auto_delete = (bit_buffer & (1 << 3)) != 0
             self.nowait = (bit_buffer & (1 << 4)) != 0
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
@@ -953,7 +924,7 @@ class Queue(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 3)
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 4)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             data.encode_table(pieces, self.arguments)
             return pieces
 
@@ -973,10 +944,8 @@ class Queue(amqp_object.Class):
 
         def decode(self, encoded, offset=0):
             self.queue, offset = data.decode_short_string(encoded, offset)
-            self.message_count = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.consumer_count = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
+            self.message_count, offset = data.decode_long_uint(encoded, offset)
+            self.consumer_count, offset = data.decode_long_uint(encoded, offset)
             return self
 
         def encode(self):
@@ -984,8 +953,8 @@ class Queue(amqp_object.Class):
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
-            pieces.append(struct.pack('>I', self.message_count))
-            pieces.append(struct.pack('>I', self.consumer_count))
+            data.encode_long_uint(pieces, self.message_count)
+            data.encode_long_uint(pieces, self.consumer_count)
             return pieces
 
     class Bind(amqp_object.Method):
@@ -1006,20 +975,18 @@ class Queue(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.nowait = (bit_buffer & (1 << 0)) != 0
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
@@ -1032,7 +999,7 @@ class Queue(amqp_object.Class):
             bit_buffer = 0
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             data.encode_table(pieces, self.arguments)
             return pieces
 
@@ -1070,24 +1037,22 @@ class Queue(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.nowait = (bit_buffer & (1 << 0)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
             bit_buffer = 0
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class PurgeOk(amqp_object.Method):
@@ -1103,13 +1068,12 @@ class Queue(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.message_count = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
+            self.message_count, offset = data.decode_long_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>I', self.message_count))
+            data.encode_long_uint(pieces, self.message_count)
             return pieces
 
     class Delete(amqp_object.Method):
@@ -1129,11 +1093,9 @@ class Queue(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.if_unused = (bit_buffer & (1 << 0)) != 0
             self.if_empty = (bit_buffer & (1 << 1)) != 0
             self.nowait = (bit_buffer & (1 << 2)) != 0
@@ -1141,7 +1103,7 @@ class Queue(amqp_object.Class):
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
@@ -1152,7 +1114,7 @@ class Queue(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 1)
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 2)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class DeleteOk(amqp_object.Method):
@@ -1168,13 +1130,12 @@ class Queue(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.message_count = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
+            self.message_count, offset = data.decode_long_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>I', self.message_count))
+            data.encode_long_uint(pieces, self.message_count)
             return pieces
 
     class Unbind(amqp_object.Method):
@@ -1194,17 +1155,16 @@ class Queue(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
@@ -1257,23 +1217,20 @@ class Basic(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.prefetch_size = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
-            self.prefetch_count = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.prefetch_size, offset = data.decode_long_uint(encoded, offset)
+            self.prefetch_count, offset = data.decode_short_uint(encoded, offset)
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.global_ = (bit_buffer & (1 << 0)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>I', self.prefetch_size))
-            pieces.append(struct.pack('>H', self.prefetch_count))
+            data.encode_long_uint(pieces, self.prefetch_size)
+            data.encode_short_uint(pieces, self.prefetch_count)
             bit_buffer = 0
             if self.global_:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class QosOk(amqp_object.Method):
@@ -1315,22 +1272,20 @@ class Basic(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
             self.consumer_tag, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.no_local = (bit_buffer & (1 << 0)) != 0
             self.no_ack = (bit_buffer & (1 << 1)) != 0
             self.exclusive = (bit_buffer & (1 << 2)) != 0
             self.nowait = (bit_buffer & (1 << 3)) != 0
-            (self.arguments, offset) = data.decode_table(encoded, offset)
+            self.arguments, offset = data.decode_table(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
@@ -1346,7 +1301,7 @@ class Basic(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 2)
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 3)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             data.encode_table(pieces, self.arguments)
             return pieces
 
@@ -1388,8 +1343,7 @@ class Basic(amqp_object.Class):
 
         def decode(self, encoded, offset=0):
             self.consumer_tag, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.nowait = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -1401,7 +1355,7 @@ class Basic(amqp_object.Class):
             bit_buffer = 0
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class CancelOk(amqp_object.Method):
@@ -1444,19 +1398,17 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.mandatory = (bit_buffer & (1 << 0)) != 0
             self.immediate = (bit_buffer & (1 << 1)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.exchange, str_or_bytes),\
                    'A non-string value was supplied for self.exchange'
             data.encode_short_string(pieces, self.exchange)
@@ -1468,7 +1420,7 @@ class Basic(amqp_object.Class):
                 bit_buffer = bit_buffer | (1 << 0)
             if self.immediate:
                 bit_buffer = bit_buffer | (1 << 1)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class Return(amqp_object.Method):
@@ -1487,8 +1439,7 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.reply_code = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.reply_code, offset = data.decode_short_uint(encoded, offset)
             self.reply_text, offset = data.decode_short_string(encoded, offset)
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
@@ -1496,7 +1447,7 @@ class Basic(amqp_object.Class):
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.reply_code))
+            data.encode_short_uint(pieces, self.reply_code)
             assert isinstance(self.reply_text, str_or_bytes),\
                    'A non-string value was supplied for self.reply_text'
             data.encode_short_string(pieces, self.reply_text)
@@ -1526,10 +1477,8 @@ class Basic(amqp_object.Class):
 
         def decode(self, encoded, offset=0):
             self.consumer_tag, offset = data.decode_short_string(encoded, offset)
-            self.delivery_tag = struct.unpack_from('>Q', encoded, offset)[0]
-            offset += 8
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.delivery_tag, offset = data.decode_longlong_uint(encoded, offset)
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.redelivered = (bit_buffer & (1 << 0)) != 0
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
@@ -1540,11 +1489,11 @@ class Basic(amqp_object.Class):
             assert isinstance(self.consumer_tag, str_or_bytes),\
                    'A non-string value was supplied for self.consumer_tag'
             data.encode_short_string(pieces, self.consumer_tag)
-            pieces.append(struct.pack('>Q', self.delivery_tag))
+            data.encode_longlong_uint(pieces, self.delivery_tag)
             bit_buffer = 0
             if self.redelivered:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             assert isinstance(self.exchange, str_or_bytes),\
                    'A non-string value was supplied for self.exchange'
             data.encode_short_string(pieces, self.exchange)
@@ -1568,24 +1517,22 @@ class Basic(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            self.ticket = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            self.ticket, offset = data.decode_short_uint(encoded, offset)
             self.queue, offset = data.decode_short_string(encoded, offset)
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.no_ack = (bit_buffer & (1 << 0)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>H', self.ticket))
+            data.encode_short_uint(pieces, self.ticket)
             assert isinstance(self.queue, str_or_bytes),\
                    'A non-string value was supplied for self.queue'
             data.encode_short_string(pieces, self.queue)
             bit_buffer = 0
             if self.no_ack:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class GetOk(amqp_object.Method):
@@ -1605,31 +1552,28 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.delivery_tag = struct.unpack_from('>Q', encoded, offset)[0]
-            offset += 8
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.delivery_tag, offset = data.decode_longlong_uint(encoded, offset)
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.redelivered = (bit_buffer & (1 << 0)) != 0
             self.exchange, offset = data.decode_short_string(encoded, offset)
             self.routing_key, offset = data.decode_short_string(encoded, offset)
-            self.message_count = struct.unpack_from('>I', encoded, offset)[0]
-            offset += 4
+            self.message_count, offset = data.decode_long_uint(encoded, offset)
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>Q', self.delivery_tag))
+            data.encode_longlong_uint(pieces, self.delivery_tag)
             bit_buffer = 0
             if self.redelivered:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             assert isinstance(self.exchange, str_or_bytes),\
                    'A non-string value was supplied for self.exchange'
             data.encode_short_string(pieces, self.exchange)
             assert isinstance(self.routing_key, str_or_bytes),\
                    'A non-string value was supplied for self.routing_key'
             data.encode_short_string(pieces, self.routing_key)
-            pieces.append(struct.pack('>I', self.message_count))
+            data.encode_long_uint(pieces, self.message_count)
             return pieces
 
     class GetEmpty(amqp_object.Method):
@@ -1669,20 +1613,18 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.delivery_tag = struct.unpack_from('>Q', encoded, offset)[0]
-            offset += 8
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.delivery_tag, offset = data.decode_longlong_uint(encoded, offset)
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.multiple = (bit_buffer & (1 << 0)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>Q', self.delivery_tag))
+            data.encode_longlong_uint(pieces, self.delivery_tag)
             bit_buffer = 0
             if self.multiple:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class Reject(amqp_object.Method):
@@ -1699,20 +1641,18 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.delivery_tag = struct.unpack_from('>Q', encoded, offset)[0]
-            offset += 8
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.delivery_tag, offset = data.decode_longlong_uint(encoded, offset)
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.requeue = (bit_buffer & (1 << 0)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>Q', self.delivery_tag))
+            data.encode_longlong_uint(pieces, self.delivery_tag)
             bit_buffer = 0
             if self.requeue:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class RecoverAsync(amqp_object.Method):
@@ -1728,8 +1668,7 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.requeue = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -1738,7 +1677,7 @@ class Basic(amqp_object.Class):
             bit_buffer = 0
             if self.requeue:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class Recover(amqp_object.Method):
@@ -1754,8 +1693,7 @@ class Basic(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.requeue = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -1764,7 +1702,7 @@ class Basic(amqp_object.Class):
             bit_buffer = 0
             if self.requeue:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class RecoverOk(amqp_object.Method):
@@ -1801,23 +1739,21 @@ class Basic(amqp_object.Class):
             return False
 
         def decode(self, encoded, offset=0):
-            self.delivery_tag = struct.unpack_from('>Q', encoded, offset)[0]
-            offset += 8
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.delivery_tag, offset = data.decode_longlong_uint(encoded, offset)
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.multiple = (bit_buffer & (1 << 0)) != 0
             self.requeue = (bit_buffer & (1 << 1)) != 0
             return self
 
         def encode(self):
             pieces = list()
-            pieces.append(struct.pack('>Q', self.delivery_tag))
+            data.encode_longlong_uint(pieces, self.delivery_tag)
             bit_buffer = 0
             if self.multiple:
                 bit_buffer = bit_buffer | (1 << 0)
             if self.requeue:
                 bit_buffer = bit_buffer | (1 << 1)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
 
@@ -1959,8 +1895,7 @@ class Confirm(amqp_object.Class):
             return True
 
         def decode(self, encoded, offset=0):
-            bit_buffer = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            bit_buffer, offset = data.decode_shortshort_uint(encoded, offset)
             self.nowait = (bit_buffer & (1 << 0)) != 0
             return self
 
@@ -1969,7 +1904,7 @@ class Confirm(amqp_object.Class):
             bit_buffer = 0
             if self.nowait:
                 bit_buffer = bit_buffer | (1 << 0)
-            pieces.append(struct.pack('B', bit_buffer))
+            data.encode_shortshort_uint(pieces, bit_buffer)
             return pieces
 
     class SelectOk(amqp_object.Method):
@@ -2033,8 +1968,7 @@ class BasicProperties(amqp_object.Properties):
         flags = 0
         flagword_index = 0
         while True:
-            partial_flags = struct.unpack_from('>H', encoded, offset)[0]
-            offset += 2
+            partial_flags, offset = data.decode_short_uint(encoded, offset)
             flags = flags | (partial_flags << (flagword_index * 16))
             if not (partial_flags & 1):
                 break
@@ -2048,17 +1982,15 @@ class BasicProperties(amqp_object.Properties):
         else:
             self.content_encoding = None
         if flags & BasicProperties.FLAG_HEADERS:
-            (self.headers, offset) = data.decode_table(encoded, offset)
+            self.headers, offset = data.decode_table(encoded, offset)
         else:
             self.headers = None
         if flags & BasicProperties.FLAG_DELIVERY_MODE:
-            self.delivery_mode = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.delivery_mode, offset = data.decode_shortshort_uint(encoded, offset)
         else:
             self.delivery_mode = None
         if flags & BasicProperties.FLAG_PRIORITY:
-            self.priority = struct.unpack_from('B', encoded, offset)[0]
-            offset += 1
+            self.priority, offset = data.decode_shortshort_uint(encoded, offset)
         else:
             self.priority = None
         if flags & BasicProperties.FLAG_CORRELATION_ID:
@@ -2078,8 +2010,7 @@ class BasicProperties(amqp_object.Properties):
         else:
             self.message_id = None
         if flags & BasicProperties.FLAG_TIMESTAMP:
-            self.timestamp = struct.unpack_from('>Q', encoded, offset)[0]
-            offset += 8
+            self.timestamp, offset = data.decode_longlong_uint(encoded, offset)
         else:
             self.timestamp = None
         if flags & BasicProperties.FLAG_TYPE:
@@ -2118,10 +2049,10 @@ class BasicProperties(amqp_object.Properties):
             data.encode_table(pieces, self.headers)
         if self.delivery_mode is not None:
             flags = flags | BasicProperties.FLAG_DELIVERY_MODE
-            pieces.append(struct.pack('B', self.delivery_mode))
+            data.encode_shortshort_uint(pieces, self.delivery_mode)
         if self.priority is not None:
             flags = flags | BasicProperties.FLAG_PRIORITY
-            pieces.append(struct.pack('B', self.priority))
+            data.encode_shortshort_uint(pieces, self.priority)
         if self.correlation_id is not None:
             flags = flags | BasicProperties.FLAG_CORRELATION_ID
             assert isinstance(self.correlation_id, str_or_bytes),\
@@ -2144,7 +2075,7 @@ class BasicProperties(amqp_object.Properties):
             data.encode_short_string(pieces, self.message_id)
         if self.timestamp is not None:
             flags = flags | BasicProperties.FLAG_TIMESTAMP
-            pieces.append(struct.pack('>Q', self.timestamp))
+            data.encode_longlong_uint(pieces, self.timestamp)
         if self.type is not None:
             flags = flags | BasicProperties.FLAG_TYPE
             assert isinstance(self.type, str_or_bytes),\
@@ -2171,7 +2102,7 @@ class BasicProperties(amqp_object.Properties):
             partial_flags = flags & 0xFFFE
             if remainder != 0:
                 partial_flags |= 1
-            flag_pieces.append(struct.pack('>H', partial_flags))
+            data.encode_shortshort_uint(flag_pieces, partial_flags)
             flags = remainder
             if not flags:
                 break

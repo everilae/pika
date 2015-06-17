@@ -11,7 +11,7 @@ import pika.frame as frame
 import pika.exceptions as exceptions
 import pika.spec as spec
 from pika.utils import is_callable
-from pika.compat import unicode_type, dictkeys, as_bytes
+from pika.compat import unicode_type, dictkeys, as_bytes, int_types
 
 
 LOGGER = logging.getLogger(__name__)
@@ -390,7 +390,7 @@ class Channel(object):
         """
         if not self.is_open:
             raise exceptions.ChannelClosed()
-        if not isinstance(delivery_tag, int):
+        if not isinstance(delivery_tag, int_types):
             raise TypeError('delivery_tag must be an integer')
         return self._send_method(spec.Basic.Reject(delivery_tag, requeue))
 

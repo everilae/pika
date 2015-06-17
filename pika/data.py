@@ -109,36 +109,52 @@ def encode_float(pieces, value):
     pieces.append(buf)
     return size
 
+# Signed integers
+encode_shortshort_int = partial(_simple_encoder, fmt='b')
+encode_short_int = partial(_simple_encoder, fmt='h')
+encode_long_int = partial(_simple_encoder, fmt='l')
+encode_longlong_int = partial(_simple_encoder, fmt='q')
+# Unsigned integers
+encode_shortshort_uint = partial(_simple_encoder, fmt='B')
+encode_short_uint = partial(_simple_encoder, fmt='H')
+encode_long_uint = partial(_simple_encoder, fmt='L')
+encode_longlong_uint = partial(_simple_encoder, fmt='Q')
 
-def encode_integer(pieces, value, fmt=None):
+
+def encode_integer(pieces, value):
     """Encode an integer ``value`` and append to ``pieces``. Return size of
     encoded value. This function tries to automatically choose the best
     fitting integer representation for given value.
     """
-    encode = (lambda type_octet, fmt:
-              _type_encoder(pieces, type_octet) +
-              _simple_encoder(pieces, value, fmt))
-
+    type_octet = None
+    encoder = None
     if -128 <= value <= 127:
         # short-short-int
-        return encode(b'b', 'b')
+        type_octet = b'b'
+        encoder = encode_shortshort_int
 
     elif -32768 <= value <= 32767:
         # short-int
-        return encode(b'U', 'h')
+        type_octet = b'U'
+        encoder = encode_short_int
 
     elif -2147483648 <= value <= 2147483647:
         # long-int
-        return encode(b'I', 'i')
+        type_octet = b'I'
+        encoder = encode_long_int
 
     elif -9223372036854775808 <= value <= 9223372036854775807:
         # long-long-int
         # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
         # there's a conflict between AMQP 0-9-1 and RabbitMQ:
         # long long int is 'L' in AMQP, but 'l' in RabbitMQ
-        return encode(b'l', 'q')
+        type_octet = b'l'
+        encoder = encode_longlong_int
 
-    raise OverflowError("integer too large")
+    else:
+        raise OverflowError("integer too large")
+
+    return _type_encoder(pieces, type_octet) + encoder(pieces, value)
 
 
 def encode_decimal(pieces, value):
@@ -231,6 +247,7 @@ def _simple_decoder(encoded, offset, fmt, type=lambda x: x):
     """Decode ``encoded`` value at ``offset`` returning ``(value, offset)``
     tuple.
     """
+    fmt = ENDIAN_FMT % fmt
     return (type(struct.unpack_from(fmt, encoded, offset)[0]),
             offset + struct.calcsize(fmt))
 
@@ -340,27 +357,41 @@ def decode_table(encoded, offset):
 
     return _varlen_decoder(encoded, offset, 'I', OrderedDict, _decoder)
 
+decode_bool = partial(_simple_decoder, fmt='B', type=bool)
+decode_timestamp = partial(_simple_decoder, fmt='Q',
+                           type=datetime.utcfromtimestamp)
+decode_float = partial(_simple_decoder, fmt='f')
+# Signed integers
+decode_shortshort_int = partial(_simple_decoder, fmt='b')
+decode_short_int = partial(_simple_decoder, fmt='h')
+decode_long_int = partial(_simple_decoder, fmt='l', type=long)
+decode_longlong_int = partial(_simple_decoder, fmt='q', type=long)
+# Unsigned integers
+decode_shortshort_uint = partial(_simple_decoder, fmt='B')
+decode_short_uint = partial(_simple_decoder, fmt='H')
+decode_long_uint = partial(_simple_decoder, fmt='L', type=long)
+decode_longlong_uint = partial(_simple_decoder, fmt='Q', type=long)
 
 _table_decoder_lookup = {
-    b't': partial(_simple_decoder, fmt='B', type=bool),
-    b'b': partial(_simple_decoder, fmt='b'),
-    b'B': partial(_simple_decoder, fmt='B'),
-    b'U': partial(_simple_decoder, fmt='>h'),
-    b'u': partial(_simple_decoder, fmt='>H'),
-    b'I': partial(_simple_decoder, fmt='>i', type=long),
-    b'i': partial(_simple_decoder, fmt='>I', type=long),
+    b't': decode_bool,
+    b'b': decode_shortshort_int,
+    b'B': decode_shortshort_uint,
+    b'U': decode_short_int,
+    b'u': decode_short_uint,
+    b'I': decode_long_int,
+    b'i': decode_long_uint,
     # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
     # there's a conflict with long long integers between RabbitMQ and
     # AMQP 0-9-1 specification: L -> l for signed long longs
-    b'l': partial(_simple_decoder, fmt='>q', type=long),
-    #b'l': partial(_simple_decoder, fmt='>Q', type=long),
-    b'f': partial(_simple_decoder, fmt='>f'),
+    b'l': decode_longlong_int,
+    #b'l': decode_longlong_uint,
+    b'f': decode_float,
     b'd': decode_double,
     b'D': decode_decimal,
     b's': decode_short_string,
     b'S': decode_long_string,
     b'A': decode_array,
-    b'T': partial(_simple_decoder, fmt='>Q', type=datetime.utcfromtimestamp),
+    b'T': decode_timestamp,
     b'F': decode_table,
     b'V': lambda encoded, offset: (None, offset),
 }
