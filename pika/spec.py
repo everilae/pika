@@ -1963,6 +1963,11 @@ class BasicProperties(amqp_object.Properties):
         self.app_id = app_id
         self.cluster_id = cluster_id
 
+    def _get_prop(self, flags, prop, decoder, encoded, offset):
+        if flags & prop:
+            return decoder(encoded, offset)
+        return None, offset
+
     def decode(self, encoded, offset=0):
         flags = 0
         flagword_index = 0
@@ -1972,62 +1977,20 @@ class BasicProperties(amqp_object.Properties):
             if not (partial_flags & 1):
                 break
             flagword_index += 1
-        if flags & BasicProperties.FLAG_CONTENT_TYPE:
-            self.content_type, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.content_type = None
-        if flags & BasicProperties.FLAG_CONTENT_ENCODING:
-            self.content_encoding, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.content_encoding = None
-        if flags & BasicProperties.FLAG_HEADERS:
-            self.headers, offset = data.decode_table(encoded, offset)
-        else:
-            self.headers = None
-        if flags & BasicProperties.FLAG_DELIVERY_MODE:
-            self.delivery_mode, offset = data.decode_shortshort_uint(encoded, offset)
-        else:
-            self.delivery_mode = None
-        if flags & BasicProperties.FLAG_PRIORITY:
-            self.priority, offset = data.decode_shortshort_uint(encoded, offset)
-        else:
-            self.priority = None
-        if flags & BasicProperties.FLAG_CORRELATION_ID:
-            self.correlation_id, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.correlation_id = None
-        if flags & BasicProperties.FLAG_REPLY_TO:
-            self.reply_to, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.reply_to = None
-        if flags & BasicProperties.FLAG_EXPIRATION:
-            self.expiration, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.expiration = None
-        if flags & BasicProperties.FLAG_MESSAGE_ID:
-            self.message_id, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.message_id = None
-        if flags & BasicProperties.FLAG_TIMESTAMP:
-            self.timestamp, offset = data.decode_longlong_uint(encoded, offset)
-        else:
-            self.timestamp = None
-        if flags & BasicProperties.FLAG_TYPE:
-            self.type, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.type = None
-        if flags & BasicProperties.FLAG_USER_ID:
-            self.user_id, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.user_id = None
-        if flags & BasicProperties.FLAG_APP_ID:
-            self.app_id, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.app_id = None
-        if flags & BasicProperties.FLAG_CLUSTER_ID:
-            self.cluster_id, offset = data.decode_short_string(encoded, offset)
-        else:
-            self.cluster_id = None
+        self.content_type, offset = self._get_prop(flags, BasicProperties.FLAG_CONTENT_TYPE, data.decode_short_string, encoded, offset)
+        self.content_encoding, offset = self._get_prop(flags, BasicProperties.FLAG_CONTENT_ENCODING, data.decode_short_string, encoded, offset)
+        self.headers, offset = self._get_prop(flags, BasicProperties.FLAG_HEADERS, data.decode_table, encoded, offset)
+        self.delivery_mode, offset = self._get_prop(flags, BasicProperties.FLAG_DELIVERY_MODE, data.decode_shortshort_uint, encoded, offset)
+        self.priority, offset = self._get_prop(flags, BasicProperties.FLAG_PRIORITY, data.decode_shortshort_uint, encoded, offset)
+        self.correlation_id, offset = self._get_prop(flags, BasicProperties.FLAG_CORRELATION_ID, data.decode_short_string, encoded, offset)
+        self.reply_to, offset = self._get_prop(flags, BasicProperties.FLAG_REPLY_TO, data.decode_short_string, encoded, offset)
+        self.expiration, offset = self._get_prop(flags, BasicProperties.FLAG_EXPIRATION, data.decode_short_string, encoded, offset)
+        self.message_id, offset = self._get_prop(flags, BasicProperties.FLAG_MESSAGE_ID, data.decode_short_string, encoded, offset)
+        self.timestamp, offset = self._get_prop(flags, BasicProperties.FLAG_TIMESTAMP, data.decode_longlong_uint, encoded, offset)
+        self.type, offset = self._get_prop(flags, BasicProperties.FLAG_TYPE, data.decode_short_string, encoded, offset)
+        self.user_id, offset = self._get_prop(flags, BasicProperties.FLAG_USER_ID, data.decode_short_string, encoded, offset)
+        self.app_id, offset = self._get_prop(flags, BasicProperties.FLAG_APP_ID, data.decode_short_string, encoded, offset)
+        self.cluster_id, offset = self._get_prop(flags, BasicProperties.FLAG_CLUSTER_ID, data.decode_short_string, encoded, offset)
         return self
 
     def encode(self):

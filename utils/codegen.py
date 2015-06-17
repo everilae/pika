@@ -155,6 +155,11 @@ def generate(specPath):
         print('')
 
     def genDecodeProperties(c):
+        print("    def _get_prop(self, flags, prop, decoder, encoded, offset):")
+        print("        if flags & prop:")
+        print("            return decoder(encoded, offset)")
+        print("        return None, offset")
+        print("")
         print("    def decode(self, encoded, offset=0):")
         print("        flags = 0")
         print("        flagword_index = 0")
@@ -169,11 +174,8 @@ def generate(specPath):
                 print("        self.%s = (flags & %s) != 0" %
                       (pyize(f.name), flagName(c, f)))
             else:
-                print("        if flags & %s:" % (flagName(c, f),))
-                genSingleDecode("            ", "self.%s" % (pyize(f.name),),
-                                f.domain)
-                print("        else:")
-                print("            self.%s = None" % (pyize(f.name),))
+                print("        self.%s, offset = self._get_prop(flags, %s, %s, encoded, offset)" % (
+                    pyize(f.name), flagName(c, f), _get_handler(f.domain, 'decode')))
         print("        return self")
         print('')
 
