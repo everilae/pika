@@ -1963,26 +1963,27 @@ class BasicProperties(amqp_object.Properties):
         self.app_id = app_id
         self.cluster_id = cluster_id
 
-    _prop_decoders = {
-        FLAG_CONTENT_TYPE: data.decode_short_string,
-        FLAG_CONTENT_ENCODING: data.decode_short_string,
-        FLAG_HEADERS: data.decode_table,
-        FLAG_DELIVERY_MODE: data.decode_shortshort_uint,
-        FLAG_PRIORITY: data.decode_shortshort_uint,
-        FLAG_CORRELATION_ID: data.decode_short_string,
-        FLAG_REPLY_TO: data.decode_short_string,
-        FLAG_EXPIRATION: data.decode_short_string,
-        FLAG_MESSAGE_ID: data.decode_short_string,
-        FLAG_TIMESTAMP: data.decode_longlong_uint,
-        FLAG_TYPE: data.decode_short_string,
-        FLAG_USER_ID: data.decode_short_string,
-        FLAG_APP_ID: data.decode_short_string,
-        FLAG_CLUSTER_ID: data.decode_short_string,
+    _prop_coders = {
+        FLAG_CONTENT_TYPE: (data.encode_short_string, data.decode_short_string),
+        FLAG_CONTENT_ENCODING: (data.encode_short_string, data.decode_short_string),
+        FLAG_HEADERS: (data.encode_table, data.decode_table),
+        FLAG_DELIVERY_MODE: (data.encode_shortshort_uint, data.decode_shortshort_uint),
+        FLAG_PRIORITY: (data.encode_shortshort_uint, data.decode_shortshort_uint),
+        FLAG_CORRELATION_ID: (data.encode_short_string, data.decode_short_string),
+        FLAG_REPLY_TO: (data.encode_short_string, data.decode_short_string),
+        FLAG_EXPIRATION: (data.encode_short_string, data.decode_short_string),
+        FLAG_MESSAGE_ID: (data.encode_short_string, data.decode_short_string),
+        FLAG_TIMESTAMP: (data.encode_longlong_uint, data.decode_longlong_uint),
+        FLAG_TYPE: (data.encode_short_string, data.decode_short_string),
+        FLAG_USER_ID: (data.encode_short_string, data.decode_short_string),
+        FLAG_APP_ID: (data.encode_short_string, data.decode_short_string),
+        FLAG_CLUSTER_ID: (data.encode_short_string, data.decode_short_string),
     }
 
     def _get_prop(self, prop, flags, encoded, offset):
         if flags & prop:
-            return self._prop_decoders[prop](encoded, offset)
+            _, decoder = self._prop_coders[prop]
+            return decoder(encoded, offset)
         return None, offset
 
     def decode(self, encoded, offset=0):
@@ -2010,27 +2011,11 @@ class BasicProperties(amqp_object.Properties):
         self.cluster_id, offset = self._get_prop(BasicProperties.FLAG_CLUSTER_ID, flags, encoded, offset)
         return self
 
-    _prop_encoders = {
-        FLAG_CONTENT_TYPE: data.encode_short_string,
-        FLAG_CONTENT_ENCODING: data.encode_short_string,
-        FLAG_HEADERS: data.encode_table,
-        FLAG_DELIVERY_MODE: data.encode_shortshort_uint,
-        FLAG_PRIORITY: data.encode_shortshort_uint,
-        FLAG_CORRELATION_ID: data.encode_short_string,
-        FLAG_REPLY_TO: data.encode_short_string,
-        FLAG_EXPIRATION: data.encode_short_string,
-        FLAG_MESSAGE_ID: data.encode_short_string,
-        FLAG_TIMESTAMP: data.encode_longlong_uint,
-        FLAG_TYPE: data.encode_short_string,
-        FLAG_USER_ID: data.encode_short_string,
-        FLAG_APP_ID: data.encode_short_string,
-        FLAG_CLUSTER_ID: data.encode_short_string,
-    }
-
     def _set_prop(self, prop, flags, pieces, value):
         if value is not None:
             flags = flags | prop
-            self._prop_encoders[prop](pieces, value)
+            encoder, _ = self._prop_coders[prop]
+            encoder(pieces, value)
         return flags
 
     def encode(self):

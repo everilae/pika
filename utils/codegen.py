@@ -154,18 +154,20 @@ def generate(specPath):
         print("            return self")
         print('')
 
-    def genPropertyCoderLookup(c, verb):
-        print("    _prop_%srs = {" % verb)
+    def genPropertyCoderLookup(c):
+        print("    _prop_coders = {")
         for f in c.fields:
-            print("        %s: %s," % (flagName(None, f),
-                                      _get_handler(f.domain, verb)))
+            print("        %s: (%s, %s)," % (flagName(None, f),
+                                             _get_handler(f.domain, 'encode'),
+                                             _get_handler(f.domain, 'decode')))
         print("    }")
         print("")
 
     def genDecodeProperties(c):
         print("    def _get_prop(self, prop, flags, encoded, offset):")
         print("        if flags & prop:")
-        print("            return self._prop_decoders[prop](encoded, offset)")
+        print("            _, decoder = self._prop_coders[prop]")
+        print("            return decoder(encoded, offset)")
         print("        return None, offset")
         print("")
         print("    def decode(self, encoded, offset=0):")
@@ -222,7 +224,8 @@ def generate(specPath):
         print("    def _set_prop(self, prop, flags, pieces, value):")
         print("        if value is not None:")
         print("            flags = flags | prop")
-        print("            self._prop_encoders[prop](pieces, value)")
+        print("            encoder, _ = self._prop_coders[prop]")
+        print("            encoder(pieces, value)")
         print("        return flags")
         print("")
         print("    def encode(self):")
@@ -346,9 +349,8 @@ str = bytes
 
             print("    def __init__(self%s):" % (fieldDeclList(c.fields),))
             print(fieldInitList('        ', c.fields))
-            genPropertyCoderLookup(c, 'decode')
+            genPropertyCoderLookup(c)
             genDecodeProperties(c)
-            genPropertyCoderLookup(c, 'encode')
             genEncodeProperties(c)
 
     print("methods = {")
