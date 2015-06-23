@@ -9,6 +9,7 @@
 from pika import amqp_object
 from pika import data
 from pika.compat import str_or_bytes, unicode_type
+from itertools import count
 
 str = bytes
 
@@ -1988,13 +1989,11 @@ class BasicProperties(amqp_object.Properties):
 
     def decode(self, encoded, offset=0):
         flags = 0
-        flagword_index = 0
-        while True:
+        for flagword_index in count(0, 16):
             partial_flags, offset = data.decode_short_uint(encoded, offset)
-            flags = flags | (partial_flags << (flagword_index * 16))
+            flags = flags | (partial_flags << flagword_index)
             if not (partial_flags & 1):
                 break
-            flagword_index += 1
         self.content_type, offset = self._get_prop(BasicProperties.FLAG_CONTENT_TYPE, flags, encoded, offset)
         self.content_encoding, offset = self._get_prop(BasicProperties.FLAG_CONTENT_ENCODING, flags, encoded, offset)
         self.headers, offset = self._get_prop(BasicProperties.FLAG_HEADERS, flags, encoded, offset)

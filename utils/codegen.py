@@ -172,13 +172,11 @@ def generate(specPath):
         print("")
         print("    def decode(self, encoded, offset=0):")
         print("        flags = 0")
-        print("        flagword_index = 0")
-        print("        while True:")
+        print("        for flagword_index in count(0, 16):")
         print("            partial_flags, offset = data.decode_short_uint(encoded, offset)")
-        print("            flags = flags | (partial_flags << (flagword_index * 16))")
+        print("            flags = flags | (partial_flags << flagword_index)")
         print("            if not (partial_flags & 1):")
         print("                break")
-        print("            flagword_index += 1")
         for f in c.fields:
             if spec.resolveDomain(f.domain) == 'bit':
                 print("        self.%s = (flags & %s) != 0" %
@@ -273,6 +271,7 @@ def generate(specPath):
 from pika import amqp_object
 from pika import data
 from pika.compat import str_or_bytes, unicode_type
+from itertools import count
 
 str = bytes
 
