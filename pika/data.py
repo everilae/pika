@@ -135,7 +135,9 @@ def encode_integer(pieces, value):
 
     elif -32768 <= value <= 32767:
         # short-int
-        type_octet = b'U'
+        # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
+        #type_octet = b'U'
+        type_octet = b's'
         encoder = encode_short_int
 
     elif -2147483648 <= value <= 2147483647:
@@ -376,7 +378,9 @@ _table_decoder_lookup = {
     b't': decode_bool,
     b'b': decode_shortshort_int,
     b'B': decode_shortshort_uint,
-    b'U': decode_short_int,
+    b's': decode_short_int,
+    # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
+    #b'U': decode_short_int,
     b'u': decode_short_uint,
     b'I': decode_long_int,
     b'i': decode_long_uint,
@@ -388,7 +392,8 @@ _table_decoder_lookup = {
     b'f': decode_float,
     b'd': decode_double,
     b'D': decode_decimal,
-    b's': decode_short_string,
+    # WARNING: https://www.rabbitmq.com/amqp-0-9-1-errata.html#section_3
+    #b's': decode_short_string,
     b'S': decode_long_string,
     b'A': decode_array,
     b'T': decode_timestamp,
