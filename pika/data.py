@@ -1,14 +1,14 @@
 """AMQP Table Encoding/Decoding"""
 import struct
-import decimal
 import calendar
 import xdrlib  # doubles
 from datetime import datetime
+from decimal import Decimal
 from functools import partial
 from collections import OrderedDict
 
 from pika import exceptions
-from pika.compat import unicode_type, PY2, long, as_bytes, int_types
+from pika.compat import unicode_type, PY2, long, as_bytes, int_types, basestring
 
 ENDIAN_FMT = '>%s'
 
@@ -212,14 +212,17 @@ def encode_table(pieces, table):
     """
     return _varlen_encoder(pieces, table, fmt='I', encoder=_table_encoder)
 
+encode_bool = partial(_simple_encoder, fmt='B')
+encode_datetime = partial(_simple_encoder, fmt='Q',
+                          conv=lambda v: calendar.timegm(v.utctimetuple()))
+
 _table_encoder_lookup = [
-    (basestring if PY2 else str, b'S', encode_long_string),
-    (bool, b't', partial(_simple_encoder, fmt='B')),
+    (basestring, b'S', encode_long_string),
+    (bool, b't', encode_bool),
     (int_types, None, encode_integer),
-    (datetime, b'T', partial(_simple_encoder, fmt='Q',
-                             conv=lambda v: calendar.timegm(v.utctimetuple()))),
+    (datetime, b'T', encode_datetime),
     (float, None, encode_float),
-    (decimal.Decimal, b'D', encode_decimal),
+    (Decimal, b'D', encode_decimal),
     (dict, b'F', encode_table),
     (list, b'A', encode_array),
 ]
@@ -309,7 +312,7 @@ def decode_decimal(encoded, offset):
     fmt = '>Bi'
     decimals, integer = struct.unpack_from(fmt, encoded, offset)
     offset += struct.calcsize(fmt)
-    value = decimal.Decimal(integer).scaleb(-decimals)
+    value = Decimal(integer).scaleb(-decimals)
     return value, offset
 
 
